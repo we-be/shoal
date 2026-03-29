@@ -153,6 +153,11 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		return nil, fmt.Errorf("navigating to %s: %w", req.URL, err)
 	}
 
+	// Detect and wait for CF challenge resolution
+	if err := waitForCFChallenge(navCtx); err != nil {
+		log.Printf("cf challenge wait: %v", err)
+	}
+
 	// Execute post-navigation actions (fill forms, click buttons, etc.)
 	for _, action := range req.Actions {
 		if err := executeAction(navCtx, action); err != nil {
@@ -242,6 +247,58 @@ func executeAction(ctx context.Context, action api.Action) error {
 
 	default:
 		return fmt.Errorf("unknown action type: %s", action.Type)
+	}
+}
+
+// CF challenge titles that indicate we're on a challenge page.
+var cfChallengeTitles = []string{
+	"Just a moment...",
+	"DDoS-GUARD",
+	"Attention Required",
+}
+
+// waitForCFChallenge detects if we landed on a Cloudflare challenge page
+// and waits for the browser to solve it (title changes when solved).
+func waitForCFChallenge(ctx context.Context) error {
+	var title string
+	if err := chromedp.Run(ctx, chromedp.Title(&title)); err != nil {
+		return err
+	}
+
+	isChallenge := false
+	for _, ct := range cfChallengeTitles {
+		if title == ct {
+			isChallenge = true
+			break
+		}
+	}
+	if !isChallenge {
+		return nil // not a challenge page
+	}
+
+	log.Printf("CF challenge detected (%q), waiting for resolution...", title)
+
+	// Poll until title changes (challenge solved) or context times out
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("challenge timeout: %w", ctx.Err())
+		default:
+		}
+
+		time.Sleep(1 * time.Second)
+
+		var current string
+		if err := chromedp.Run(ctx, chromedp.Title(&current)); err != nil {
+			return err
+		}
+
+		if current != title {
+			log.Printf("CF challenge resolved: %q -> %q", title, current)
+			// Give the page a moment to fully load after challenge
+			chromedp.Run(ctx, chromedp.WaitReady("body", chromedp.ByQuery))
+			return nil
+		}
 	}
 }
 
