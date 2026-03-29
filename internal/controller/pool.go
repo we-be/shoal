@@ -43,13 +43,14 @@ func NewPool() *Pool {
 }
 
 // Register adds a new agent to the pool and gives it a fish identity.
+// If an agent at the same address already exists (reconnection), re-attach
+// the old identity so cookies and warmth survive restarts.
 func (p *Pool) Register(req api.RegisterRequest) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	class := req.Class
 	if class == "" {
-		// Infer class from backend type
 		switch req.Backend {
 		case api.BackendTLSClient:
 			class = api.ClassLight
@@ -58,6 +59,24 @@ func (p *Pool) Register(req api.RegisterRequest) string {
 		}
 	}
 
+	// Check for reconnection — same address means the fish is back
+	for id, existing := range p.agents {
+		if existing.Address == req.Address {
+			existing.State = api.StateAvailable
+			existing.Backend = req.Backend
+			existing.Class = class
+			if req.IP != "" {
+				existing.Identity.IP = req.IP
+			}
+			log.Printf("agent reconnected: %s (%s @ %s, %d domains preserved)",
+				id, req.Backend, req.Address, len(existing.Identity.Domains))
+			agentReconnections.Inc()
+			p.updateGauges()
+			return id
+		}
+	}
+
+	// New agent — fresh identity
 	identity := newIdentity(req.Backend, class, req.IP)
 
 	p.agents[identity.ID] = &ManagedAgent{

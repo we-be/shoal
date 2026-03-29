@@ -19,22 +19,31 @@ type Server struct {
 	pool     *Pool
 	events   *EventLog
 	health   *HealthChecker
+	store    *Store
 	mux      *http.ServeMux
 	client   *http.Client
 	started  time.Time
 }
 
 func NewServer() *Server {
-	return NewServerWithConfig(DefaultHealthConfig())
+	return NewServerWithConfig(DefaultHealthConfig(), "shoal-pool.json")
 }
 
-func NewServerWithConfig(healthCfg HealthConfig) *Server {
+func NewServerWithConfig(healthCfg HealthConfig, storePath string) *Server {
 	pool := NewPool()
 	events := NewEventLog(10 * time.Minute)
+
+	// Restore pool state from disk
+	store := NewStore(pool, storePath, 30*time.Second)
+	if err := store.Load(); err != nil {
+		log.Printf("store load error (continuing fresh): %v", err)
+	}
+	store.Start()
 
 	s := &Server{
 		pool:   pool,
 		events: events,
+		store:  store,
 		client: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -71,6 +80,13 @@ func NewServerWithConfig(healthCfg HealthConfig) *Server {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
+}
+
+// Shutdown saves pool state and stops background goroutines.
+func (s *Server) Shutdown() {
+	s.health.Stop()
+	s.store.Stop() // final snapshot
+	log.Printf("controller shutdown complete")
 }
 
 // --- Agent Registration ---

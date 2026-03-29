@@ -97,6 +97,14 @@ var (
 		Help:      "Lease acquisitions by warmth level.",
 	}, []string{"warmth"})
 
+	// Agent reconnection
+	agentReconnections = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "shoal",
+		Subsystem: "agent",
+		Name:      "reconnections_total",
+		Help:      "Total agent reconnections (same address, identity preserved).",
+	})
+
 	// Health checks
 	leasesExpired = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "shoal",
