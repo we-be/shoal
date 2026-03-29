@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/we-be/shoal/internal/api"
 )
 
@@ -42,6 +44,9 @@ func NewServer() *Server {
 	s.mux.HandleFunc("GET /pool/status", s.handlePoolStatus)
 	s.mux.HandleFunc("GET /pool/agents", s.handlePoolAgents)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+
+	// Metrics
+	s.mux.Handle("GET /metrics", promhttp.Handler())
 
 	return s
 }
@@ -111,23 +116,32 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward to agent
+	domain := extractDomain(req.URL)
+	timer := prometheus.NewTimer(requestDuration.WithLabelValues(domain, agent.Class))
+
 	navReq := api.NavigateRequest{
 		URL:        req.URL,
 		MaxTimeout: req.MaxTimeout,
 		Actions:    req.Actions,
 	}
 	resp, err := s.forwardToAgent(agent, navReq)
+	timer.ObserveDuration()
+
 	if err != nil {
 		log.Printf("agent %s error: %v", agent.Identity.ID, err)
+		requestsTotal.WithLabelValues(domain, agent.Class, "error").Inc()
 		writeJSON(w, http.StatusBadGateway, api.ErrorResponse{Error: api.ErrAgentError, Detail: err.Error()})
 		return
 	}
+
+	requestsTotal.WithLabelValues(domain, agent.Class, "ok").Inc()
 
 	// Record what this fish learned — cookies, CF clearance, domain state
 	s.pool.RecordNavigation(req.LeaseID, req.URL, resp.Cookies)
 
 	// If a grouper just earned CF clearance, hand the cookies to minnows
 	if agent.Class == api.ClassHeavy && hasCFClearance(resp.Cookies) {
+		cfSolvesTotal.Inc()
 		go s.propagateCookiesToMinnows(req.URL, resp.Cookies)
 	}
 
@@ -238,6 +252,7 @@ func (s *Server) propagateCookiesToMinnows(navURL string, cookies []api.Cookie) 
 				return
 			}
 			resp.Body.Close()
+			cfHandoffsTotal.Inc()
 			log.Printf("cookie handoff to %s: %d cookies for %s", id, len(cookies), navURL)
 		}(m.Address, m.Identity.ID)
 	}

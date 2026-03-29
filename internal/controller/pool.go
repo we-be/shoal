@@ -66,6 +66,9 @@ func (p *Pool) Register(req api.RegisterRequest) string {
 		Identity: identity,
 	}
 
+	agentRegistrations.WithLabelValues(req.Backend, class).Inc()
+	p.updateGauges()
+
 	return identity.ID
 }
 
@@ -98,6 +101,7 @@ func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 	}
 
 	if bestAgent == nil {
+		leasesDenied.Inc()
 		return nil, fmt.Errorf(api.ErrPoolExhausted)
 	}
 
@@ -111,6 +115,10 @@ func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 		Domain:   req.Domain,
 	}
 	p.leases[leaseID] = lease
+
+	leasesAcquired.WithLabelValues(bestAgent.Class, req.Consumer).Inc()
+	warmMatches.WithLabelValues(fmt.Sprintf("%d", bestWarmth)).Inc()
+	p.updateGauges()
 
 	if bestWarmth > 0 {
 		log.Printf("warm match: %s has warmth %d for %s", bestID, bestWarmth, req.Domain)
@@ -135,6 +143,8 @@ func (p *Pool) Release(leaseID string) error {
 	}
 
 	delete(p.leases, leaseID)
+	leasesReleased.Inc()
+	p.updateGauges()
 	return nil
 }
 
@@ -221,6 +231,24 @@ func (p *Pool) Agents() []api.BrowserIdentity {
 		out = append(out, *a.Identity)
 	}
 	return out
+}
+
+// updateGauges recalculates pool gauge metrics. Must be called with mu held.
+func (p *Pool) updateGauges() {
+	// Reset and recount
+	poolAgentsTotal.Reset()
+	poolAgentsAvailable.Reset()
+	poolAgentsLeased.Reset()
+
+	for _, a := range p.agents {
+		poolAgentsTotal.WithLabelValues(a.Class, a.Backend).Inc()
+		switch a.State {
+		case api.StateAvailable:
+			poolAgentsAvailable.WithLabelValues(a.Class).Inc()
+		case api.StateLeased:
+			poolAgentsLeased.WithLabelValues(a.Class).Inc()
+		}
+	}
 }
 
 func newLeaseID() string {
