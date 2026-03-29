@@ -12,15 +12,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/fetch"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/we-be/shoal/internal/api"
 )
 
-// Chrome launch flags — NO --headless. We use xvfb (or a real display)
-// so Chrome runs as a full browser with complete rendering pipeline.
-// This is what makes it invisible to Cloudflare's fingerprinting.
+// Chrome launch flags for anti-detection headless mode.
+// NO --headless — we use xvfb or a real display.
 var chromeFlags = []string{
 	"--no-sandbox",
 	"--disable-blink-features=AutomationControlled",
@@ -48,7 +49,6 @@ var chromeFlags = []string{
 }
 
 // Stealth JS injected via CDP before any page loads.
-// Hides the automation footprint from Cloudflare's probing.
 const stealthJS = `
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 window.chrome = window.chrome || {};
@@ -58,7 +58,7 @@ window.chrome.runtime = window.chrome.runtime || {};
 // NewChromeBackend launches Chrome and connects via CDP.
 // This is the grouper — full browser with real rendering, xvfb-compatible,
 // capable of passing Cloudflare Turnstile's fingerprint gauntlet.
-func NewChromeBackend(chromeBin string, cdpPort int) (*CDPBackend, error) {
+func NewChromeBackend(chromeBin string, cdpPort int, proxy *api.ProxyConfig) (*CDPBackend, error) {
 	if chromeBin == "" {
 		chromeBin = findChrome()
 	}
@@ -69,7 +69,6 @@ func NewChromeBackend(chromeBin string, cdpPort int) (*CDPBackend, error) {
 	// Ensure we have a display (real or xvfb)
 	display := os.Getenv("DISPLAY")
 	if display == "" {
-		// Try to start xvfb
 		xvfb, err := startXvfb()
 		if err != nil {
 			return nil, fmt.Errorf("no DISPLAY and couldn't start xvfb: %w", err)
@@ -84,12 +83,20 @@ func NewChromeBackend(chromeBin string, cdpPort int) (*CDPBackend, error) {
 	userDataDir := fmt.Sprintf("/tmp/shoal-chrome-%d", cdpPort)
 	os.MkdirAll(userDataDir, 0o755)
 
-	args := append(chromeFlags,
+	args := append([]string{}, chromeFlags...)
+	args = append(args,
 		"--remote-debugging-port="+portStr,
 		"--remote-debugging-address=127.0.0.1",
 		"--user-data-dir="+userDataDir,
-		"about:blank",
 	)
+
+	// Add proxy server flag if configured
+	if proxy != nil && proxy.URL != "" {
+		args = append(args, "--proxy-server="+proxy.URL)
+		log.Printf("chrome proxy: %s", proxy.URL)
+	}
+
+	args = append(args, "about:blank")
 
 	var cmd *exec.Cmd
 	if strings.HasPrefix(chromeBin, "flatpak::") {
@@ -113,7 +120,6 @@ func NewChromeBackend(chromeBin string, cdpPort int) (*CDPBackend, error) {
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", cdpPort)
 
-	// Wait for Chrome to be fully ready with a page target
 	wsURL, pageTargetID, err := waitForChromeReady(baseURL, 15*time.Second)
 	if err != nil {
 		cmd.Process.Kill()
@@ -122,18 +128,28 @@ func NewChromeBackend(chromeBin string, cdpPort int) (*CDPBackend, error) {
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
 
-	// Attach to Chrome's existing page target
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx,
 		chromedp.WithTargetID(target.ID(pageTargetID)))
 
-	// Inject stealth script before any page loads
-	if err := chromedp.Run(tabCtx,
+	// Inject stealth script + set up proxy auth if needed
+	initActions := chromedp.Tasks{
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			_, err := page.AddScriptToEvaluateOnNewDocument(stealthJS).Do(ctx)
 			return err
 		}),
-		chromedp.Navigate("about:blank"),
-	); err != nil {
+	}
+
+	// Set up CDP Fetch-based proxy auth (Chrome 137+ broke extension-based auth)
+	if proxy != nil && proxy.Username != "" {
+		initActions = append(initActions, chromedp.ActionFunc(func(ctx context.Context) error {
+			return setupCDPProxyAuth(ctx, proxy.Username, proxy.Password)
+		}))
+		log.Printf("chrome CDP proxy auth enabled for %s", proxy.URL)
+	}
+
+	initActions = append(initActions, chromedp.Navigate("about:blank"))
+
+	if err := chromedp.Run(tabCtx, initActions); err != nil {
 		tabCancel()
 		allocCancel()
 		cmd.Process.Kill()
@@ -151,6 +167,41 @@ func NewChromeBackend(chromeBin string, cdpPort int) (*CDPBackend, error) {
 		started:     time.Now(),
 		name:        api.BackendChrome,
 	}, nil
+}
+
+// setupCDPProxyAuth enables CDP Fetch to handle proxy authentication.
+// This replaces Chrome's broken MV3 proxy extension auth (Chrome 137+).
+func setupCDPProxyAuth(ctx context.Context, username, password string) error {
+	// Enable Fetch with auth interception
+	if err := fetch.Enable().WithHandleAuthRequests(true).Do(ctx); err != nil {
+		return fmt.Errorf("fetch.enable: %w", err)
+	}
+
+	// Listen for auth challenges and paused requests in background
+	chromedp.ListenTarget(ctx, func(ev interface{}) {
+		switch e := ev.(type) {
+		case *fetch.EventAuthRequired:
+			go func() {
+				err := fetch.ContinueWithAuth(e.RequestID, &fetch.AuthChallengeResponse{
+					Response: fetch.AuthChallengeResponseResponseProvideCredentials,
+					Username: username,
+					Password: password,
+				}).Do(ctx)
+				if err != nil {
+					log.Printf("proxy auth failed: %v", err)
+				}
+			}()
+		case *fetch.EventRequestPaused:
+			go func() {
+				err := fetch.ContinueRequest(e.RequestID).Do(ctx)
+				if err != nil {
+					log.Printf("continue request failed: %v", err)
+				}
+			}()
+		}
+	})
+
+	return nil
 }
 
 // startXvfb tries to start a virtual framebuffer.
@@ -236,3 +287,6 @@ func findChrome() string {
 
 	return ""
 }
+
+// Suppress unused import for network package (used by CDPBackend in cdp.go)
+var _ = network.GetCookies

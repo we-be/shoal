@@ -17,6 +17,14 @@ type RegisterResponse struct {
 	AgentID string `json:"agent_id"`
 }
 
+// --- Proxy Config ---
+
+type ProxyConfig struct {
+	URL      string `json:"url"`                // http://host:port or socks5://host:port
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
 // --- Lease API (client -> controller) ---
 
 type LeaseRequest struct {

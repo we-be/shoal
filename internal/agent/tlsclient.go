@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,7 +31,7 @@ type TLSClientBackend struct {
 	started   time.Time
 }
 
-func NewTLSClientBackend(userAgent string) (*TLSClientBackend, error) {
+func NewTLSClientBackend(userAgent string, proxy *api.ProxyConfig) (*TLSClientBackend, error) {
 	if userAgent == "" {
 		userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
 	}
@@ -45,6 +47,19 @@ func NewTLSClientBackend(userAgent string) (*TLSClientBackend, error) {
 	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
 	if err != nil {
 		return nil, fmt.Errorf("creating tls client: %w", err)
+	}
+
+	// Set proxy if configured
+	if proxy != nil && proxy.URL != "" {
+		proxyURL := proxy.URL
+		// tls-client expects http://user:pass@host:port format
+		if proxy.Username != "" {
+			proxyURL = insertProxyAuth(proxy.URL, proxy.Username, proxy.Password)
+		}
+		if err := client.SetProxy(proxyURL); err != nil {
+			return nil, fmt.Errorf("setting proxy: %w", err)
+		}
+		log.Printf("tls-client proxy: %s", proxy.URL)
 	}
 
 	return &TLSClientBackend{
@@ -169,4 +184,20 @@ func (t *TLSClientBackend) Health() api.HealthStatus {
 func (t *TLSClientBackend) Close() error {
 	t.client.CloseIdleConnections()
 	return nil
+}
+
+// insertProxyAuth inserts user:pass into a proxy URL.
+// http://host:port -> http://user:pass@host:port
+func insertProxyAuth(proxyURL, username, password string) string {
+	auth := url.UserPassword(username, password).String()
+	if strings.HasPrefix(proxyURL, "http://") {
+		return "http://" + auth + "@" + strings.TrimPrefix(proxyURL, "http://")
+	}
+	if strings.HasPrefix(proxyURL, "https://") {
+		return "https://" + auth + "@" + strings.TrimPrefix(proxyURL, "https://")
+	}
+	if strings.HasPrefix(proxyURL, "socks5://") {
+		return "socks5://" + auth + "@" + strings.TrimPrefix(proxyURL, "socks5://")
+	}
+	return proxyURL
 }

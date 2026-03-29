@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/we-be/shoal/internal/agent"
+	"github.com/we-be/shoal/internal/api"
 )
 
 func main() {
@@ -16,9 +17,22 @@ func main() {
 	lpPort := flag.Int("lightpanda-port", 9222, "CDP port for lightpanda/chrome subprocess")
 	chromeBin := flag.String("chrome-bin", "", "path to chrome binary (auto-detected if empty)")
 	userAgent := flag.String("user-agent", "", "User-Agent string (for tls-client backend)")
+	proxyURL := flag.String("proxy-url", "", "proxy URL (http://host:port)")
+	proxyUser := flag.String("proxy-user", "", "proxy username")
+	proxyPass := flag.String("proxy-pass", "", "proxy password")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	// Build proxy config if provided
+	var proxy *api.ProxyConfig
+	if *proxyURL != "" {
+		proxy = &api.ProxyConfig{
+			URL:      *proxyURL,
+			Username: *proxyUser,
+			Password: *proxyPass,
+		}
+	}
 
 	var backend agent.BrowserBackend
 	var err error
@@ -38,10 +52,10 @@ func main() {
 		backend, err = agent.NewLightpandaBackend(*lpBin, *lpPort)
 	case "chrome":
 		log.Printf("using chrome backend (grouper, port=%d)", *lpPort)
-		backend, err = agent.NewChromeBackend(*chromeBin, *lpPort)
+		backend, err = agent.NewChromeBackend(*chromeBin, *lpPort, proxy)
 	case "tls-client":
 		log.Printf("using tls-client backend (minnow)")
-		backend, err = agent.NewTLSClientBackend(*userAgent)
+		backend, err = agent.NewTLSClientBackend(*userAgent, proxy)
 	default:
 		log.Fatalf("unknown backend: %s", *backendType)
 	}
