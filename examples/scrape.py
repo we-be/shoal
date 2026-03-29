@@ -1,12 +1,13 @@
 """
 Shoal load balancer test — scrape pages through a pool of agents
-and observe identity tracking + warm matching.
+and observe identity tracking, warm matching, and session persistence.
 
 Usage:
     make run                    # start the cluster first
     python examples/scrape.py   # run this test
 """
 
+import json
 import requests
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -86,7 +87,7 @@ def test_sequential(client: ShoalClient):
     lease = client.lease("sequential-test", "httpbin.org")
     lease_id = lease["lease_id"]
     agent_id = lease["agent_id"]
-    print(f"  lease {lease_id} -> {agent_id}")
+    print(f"  lease -> {agent_id}")
 
     for url in TARGETS[:3]:
         t0 = time.perf_counter()
@@ -97,7 +98,6 @@ def test_sequential(client: ShoalClient):
         print(f"    -> {result['status']} | {len(result['html']):,}b | {cookies} cookies | {elapsed:.2f}s")
 
     client.release(lease_id)
-    print(f"  released {lease_id}")
 
 
 def test_concurrent(client: ShoalClient):
@@ -114,17 +114,12 @@ def test_concurrent(client: ShoalClient):
 
     targets = TARGETS[: min(len(TARGETS), n_agents)]
     leases = []
-    agent_hits: dict[str, int] = {}
 
     for url in targets:
         domain = url.split("/")[2]
         lease = client.lease("concurrent-test", domain)
         leases.append((lease, url))
-        agent_id = lease["agent_id"]
-        agent_hits[agent_id] = agent_hits.get(agent_id, 0) + 1
-        print(f"  lease {lease['lease_id'][:16]:16s} -> {agent_id} for {domain}")
-
-    print(f"\n  agent distribution: {dict(agent_hits)}")
+        print(f"  {lease['agent_id']:20s} <- {domain}")
 
     def do_request(lease_url):
         lease, url = lease_url
@@ -141,43 +136,71 @@ def test_concurrent(client: ShoalClient):
             lease, url, result, elapsed = future.result()
             results.append((lease, url, result, elapsed))
             size = len(result.get("html", ""))
-            cookies = len(result.get("cookies", []))
-            print(f"  {lease['agent_id']:20s} | {url}")
-            print(f"    -> {result['status']} | {size:,}b | {cookies} cookies | {elapsed:.2f}s")
+            print(f"  {lease['agent_id']:20s} | {url} -> {result['status']} | {size:,}b | {elapsed:.2f}s")
 
     for lease, _, _, _ in results:
         client.release(lease["lease_id"])
 
 
-def test_warm_matching(client: ShoalClient):
+def test_auth_persistence(client: ShoalClient):
     """
-    Test that the controller prefers warm agents for repeat domains.
+    Test that login/session state persists across navigations AND leases.
 
-    1. Scrape httpbin.org with one agent (builds up cookies/domain state)
-    2. Release that agent
-    3. Request httpbin.org again — should get the SAME fish back (warm match)
+    1. Lease a fish, "log in" (set session cookie)
+    2. Navigate to other pages — cookie persists (same tab)
+    3. Verify auth state via /cookies endpoint
+    4. Release the fish
+    5. Re-lease same domain — warm match gets the SAME fish
+    6. Verify cookie survived the release cycle
     """
-    print("\n--- Warm matching test ---\n")
+    print("\n--- Auth persistence test ---\n")
 
-    # Step 1: first visit — any agent
-    lease1 = client.lease("warm-test", "httpbin.org")
-    fish1 = lease1["agent_id"]
-    print(f"  first visit: {fish1}")
+    # Step 1: lease + set session cookie
+    lease = client.lease("auth-test", "httpbin.org")
+    fish = lease["agent_id"]
+    lid = lease["lease_id"]
+    print(f"  leased {fish}")
 
-    result = client.navigate(lease1["lease_id"], "https://httpbin.org/cookies/set/session_id/abc123")
-    cookies1 = len(result.get("cookies", []))
-    print(f"    set cookie -> {cookies1} cookies tracked")
+    result = client.navigate(lid, "https://httpbin.org/cookies/set/session_id/user_hunter_authenticated")
+    session_cookies = [c for c in result.get("cookies", []) if c["name"] == "session_id"]
+    assert session_cookies, "cookie not set!"
+    print(f"  logged in: session_id={session_cookies[0]['value']}")
 
-    client.release(lease1["lease_id"])
-    print(f"  released {fish1}")
+    # Step 2: navigate to different pages — cookie should follow
+    for url in ["https://httpbin.org/html", "https://httpbin.org/json"]:
+        r = client.navigate(lid, url)
+        has_session = any(c["name"] == "session_id" for c in r.get("cookies", []))
+        print(f"  {url.split('/')[-1]:10s} -> session cookie present: {has_session}")
+        assert has_session, f"session cookie lost on {url}!"
 
-    # Step 2: second visit — should get the same warm fish
-    lease2 = client.lease("warm-test", "httpbin.org")
+    # Step 3: verify via /cookies endpoint
+    r = client.navigate(lid, "https://httpbin.org/cookies")
+    cookie_data = json.loads(r["html"].split("<pre>")[1].split("</pre>")[0])
+    print(f"  httpbin confirms: {cookie_data['cookies']}")
+    assert cookie_data["cookies"].get("session_id") == "user_hunter_authenticated"
+
+    # Step 4: release
+    client.release(lid)
+    print(f"  released {fish}")
+
+    # Step 5: re-lease — should warm match to same fish
+    lease2 = client.lease("auth-test", "httpbin.org")
     fish2 = lease2["agent_id"]
-    warm = "WARM MATCH" if fish1 == fish2 else "COLD (different agent)"
-    print(f"  second visit: {fish2} <- {warm}")
+    lid2 = lease2["lease_id"]
+    warm = "WARM MATCH" if fish == fish2 else f"COLD (got {fish2}!)"
+    print(f"  re-leased: {fish2} <- {warm}")
+    assert fish == fish2, f"expected warm match to {fish}, got {fish2}"
 
-    client.release(lease2["lease_id"])
+    # Step 6: verify cookies survived
+    r2 = client.navigate(lid2, "https://httpbin.org/cookies")
+    cookie_data2 = json.loads(r2["html"].split("<pre>")[1].split("</pre>")[0])
+    survived = cookie_data2["cookies"].get("session_id") == "user_hunter_authenticated"
+    print(f"  session survived release: {survived}")
+    print(f"  httpbin confirms: {cookie_data2['cookies']}")
+    assert survived, "session cookie lost across lease cycle!"
+
+    client.release(lid2)
+    print(f"  PASS — auth persists within lease AND across warm re-lease")
 
 
 def test_exhaustion(client: ShoalClient):
@@ -186,15 +209,14 @@ def test_exhaustion(client: ShoalClient):
 
     pool = client.pool_status()
     n = pool["total"]
-    print(f"  pool has {n} agents")
 
     leases = []
     for i in range(n):
         lease = client.lease("exhaust-test", f"domain-{i}.com")
         leases.append(lease)
-        print(f"  leased {lease['lease_id'][:16]:16s} -> {lease['agent_id']}")
+        print(f"  leased {lease['agent_id']}")
 
-    print(f"  all {n} agents leased, trying one more...")
+    print(f"  all {n} leased, trying one more...")
     try:
         client.lease("exhaust-test", "one-too-many.com")
         print("  unexpected: got a lease?!")
@@ -204,7 +226,6 @@ def test_exhaustion(client: ShoalClient):
 
     for lease in leases:
         client.release(lease["lease_id"])
-    print(f"  released all {n} leases")
 
 
 def main():
@@ -223,17 +244,15 @@ def main():
         print("\nno agents registered — run `make run` first")
         return
 
-    # Show initial identities
-    print("\n--- Initial identities ---")
+    print("\n--- Identities ---")
     print_agents(client.agents())
 
     test_sequential(client)
     test_concurrent(client)
-    test_warm_matching(client)
+    test_auth_persistence(client)
     test_exhaustion(client)
 
-    # Show final identities — should see accumulated domain state
-    print("\n--- Final identities (accumulated state) ---")
+    print("\n--- Final identities ---")
     print_agents(client.agents())
 
     print("\n=== all tests passed ===")

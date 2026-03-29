@@ -20,11 +20,16 @@ import (
 
 // CDPBackend connects to any CDP-speaking browser over WebSocket.
 // Browser-agnostic — works with Lightpanda, Chrome, Chromium, or anything
-// that speaks the Chrome DevTools Protocol. Like the tide, it doesn't care
-// what kind of fish is swimming.
+// that speaks the Chrome DevTools Protocol.
+//
+// Maintains a persistent browser tab so cookies, sessions, and login state
+// survive across navigations. This is the fish's memory — the accumulated
+// dirt and oil on its hands.
 type CDPBackend struct {
 	allocCtx    context.Context
 	allocCancel context.CancelFunc
+	tabCtx      context.Context    // persistent tab — cookies live here
+	tabCancel   context.CancelFunc
 	cmd         *exec.Cmd // non-nil if we launched the browser subprocess
 	started     time.Time
 	name        string
@@ -32,7 +37,6 @@ type CDPBackend struct {
 
 // NewCDPBackend connects to an existing CDP endpoint at the given WebSocket URL.
 func NewCDPBackend(wsURL string) (*CDPBackend, error) {
-	// Try to discover the real WebSocket URL from /json/version
 	resolved, err := discoverCDPURL(wsURL)
 	if err != nil {
 		log.Printf("cdp discovery failed, using direct URL: %v", err)
@@ -40,22 +44,16 @@ func NewCDPBackend(wsURL string) (*CDPBackend, error) {
 	}
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), resolved)
-
-	return &CDPBackend{
-		allocCtx:    allocCtx,
-		allocCancel: allocCancel,
-		started:     time.Now(),
-		name:        "cdp",
-	}, nil
+	return initCDPBackend(allocCtx, allocCancel, nil, "cdp")
 }
 
 // NewLightpandaBackend launches a Lightpanda process and connects via CDP.
-// Each agent gets its own browser — one fish in the shoal.
 func NewLightpandaBackend(binPath string, cdpPort int) (*CDPBackend, error) {
 	portStr := strconv.Itoa(cdpPort)
 
 	cmd := exec.Command(binPath, "serve", "--host", "127.0.0.1", "--port", portStr,
-		"--insecure-disable-tls-host-verification")
+		"--insecure-disable-tls-host-verification",
+		"--timeout", "86400")
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 
@@ -65,7 +63,6 @@ func NewLightpandaBackend(binPath string, cdpPort int) (*CDPBackend, error) {
 
 	log.Printf("lightpanda started (pid=%d, port=%d)", cmd.Process.Pid, cdpPort)
 
-	// Wait for CDP to be ready
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", cdpPort)
 	wsURL, err := waitForCDP(baseURL, 10*time.Second)
 	if err != nil {
@@ -74,33 +71,54 @@ func NewLightpandaBackend(binPath string, cdpPort int) (*CDPBackend, error) {
 	}
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
+	return initCDPBackend(allocCtx, allocCancel, cmd, "lightpanda")
+}
+
+// initCDPBackend creates a persistent browser tab that lives for the agent's lifetime.
+func initCDPBackend(allocCtx context.Context, allocCancel context.CancelFunc, cmd *exec.Cmd, name string) (*CDPBackend, error) {
+	// Create ONE persistent tab — this is the fish's body.
+	// All navigations reuse this tab so cookies persist.
+	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
+
+	// Warm up the tab
+	if err := chromedp.Run(tabCtx, chromedp.Navigate("about:blank")); err != nil {
+		tabCancel()
+		allocCancel()
+		if cmd != nil {
+			cmd.Process.Kill()
+		}
+		return nil, fmt.Errorf("initializing browser tab: %w", err)
+	}
+
+	log.Printf("%s backend ready (persistent tab initialized)", name)
 
 	return &CDPBackend{
 		allocCtx:    allocCtx,
 		allocCancel: allocCancel,
+		tabCtx:      tabCtx,
+		tabCancel:   tabCancel,
 		cmd:         cmd,
 		started:     time.Now(),
-		name:        "lightpanda",
+		name:        name,
 	}, nil
 }
 
 func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*api.NavigateResponse, error) {
-	// Each request gets a fresh tab — clean slate
-	tabCtx, tabCancel := chromedp.NewContext(b.allocCtx)
-	defer tabCancel()
-
 	timeout := 30 * time.Second
 	if req.MaxTimeout > 0 {
 		timeout = time.Duration(req.MaxTimeout) * time.Millisecond
 	}
-	tabCtx, timeoutCancel := context.WithTimeout(tabCtx, timeout)
-	defer timeoutCancel()
+
+	// Child context with timeout — cancelling this does NOT kill the
+	// persistent tab. The fish keeps swimming even if one request times out.
+	navCtx, navCancel := context.WithTimeout(b.tabCtx, timeout)
+	defer navCancel()
 
 	var html string
 	var currentURL string
 	var cookies []*network.Cookie
 
-	err := chromedp.Run(tabCtx,
+	err := chromedp.Run(navCtx,
 		chromedp.Navigate(req.URL),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.OuterHTML("html", &html, chromedp.ByQuery),
@@ -115,7 +133,6 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		return nil, fmt.Errorf("navigating to %s: %w", req.URL, err)
 	}
 
-	// Convert CDP cookies to our format
 	apiCookies := make([]api.Cookie, len(cookies))
 	for i, c := range cookies {
 		apiCookies[i] = api.Cookie{
@@ -140,7 +157,6 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 func (b *CDPBackend) Health() api.HealthStatus {
 	status := "ok"
 
-	// If we own the process, check it's still swimming
 	if b.cmd != nil && b.cmd.Process != nil {
 		if err := b.cmd.Process.Signal(syscall.Signal(0)); err != nil {
 			status = "unhealthy"
@@ -155,11 +171,11 @@ func (b *CDPBackend) Health() api.HealthStatus {
 }
 
 func (b *CDPBackend) Close() error {
+	b.tabCancel()
 	b.allocCancel()
 
 	if b.cmd != nil && b.cmd.Process != nil {
 		log.Printf("stopping %s (pid=%d)", b.name, b.cmd.Process.Pid)
-		// Ask nicely first
 		b.cmd.Process.Signal(syscall.SIGTERM)
 		done := make(chan error, 1)
 		go func() { done <- b.cmd.Wait() }()
@@ -174,9 +190,7 @@ func (b *CDPBackend) Close() error {
 }
 
 // discoverCDPURL queries /json/version to find the browser's WebSocket URL.
-// Falls back to constructing a URL from the base if discovery fails.
 func discoverCDPURL(rawURL string) (string, error) {
-	// Normalize to HTTP for the discovery request
 	httpURL := rawURL
 	httpURL = strings.Replace(httpURL, "ws://", "http://", 1)
 	httpURL = strings.Replace(httpURL, "wss://", "https://", 1)
@@ -203,7 +217,6 @@ func discoverCDPURL(rawURL string) (string, error) {
 }
 
 // waitForCDP polls the CDP endpoint until it responds or times out.
-// Returns the discovered WebSocket URL.
 func waitForCDP(baseURL string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 
@@ -213,7 +226,6 @@ func waitForCDP(baseURL string, timeout time.Duration) (string, error) {
 			return wsURL, nil
 		}
 
-		// Also try direct WebSocket URL as fallback
 		wsBase := strings.Replace(baseURL, "http://", "ws://", 1)
 		resp, err := http.Get(baseURL + "/json/version")
 		if err == nil {
