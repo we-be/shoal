@@ -208,7 +208,7 @@ func setupCDPProxyAuth(ctx context.Context, username, password string) error {
 func startXvfb() (string, error) {
 	xvfbPath, err := exec.LookPath("Xvfb")
 	if err != nil {
-		return "", fmt.Errorf("Xvfb not found in PATH")
+		return "", fmt.Errorf("xvfb not found in PATH")
 	}
 
 	display := ":99"
