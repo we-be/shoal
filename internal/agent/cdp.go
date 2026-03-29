@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/we-be/shoal/internal/api"
@@ -31,6 +32,7 @@ type CDPBackend struct {
 	allocCancel context.CancelFunc
 	tabCtx      context.Context    // persistent tab — cookies live here
 	tabCancel   context.CancelFunc
+	primaryID   target.ID          // the one tab we keep — everything else gets closed
 	cmd         *exec.Cmd // non-nil if we launched the browser subprocess
 	started     time.Time
 	name        string
@@ -121,13 +123,23 @@ func initCDPBackend(allocCtx context.Context, allocCancel context.CancelFunc, cm
 		}
 	}
 
-	log.Printf("%s backend ready (persistent tab initialized)", name)
+	// Capture the primary target ID so we can clean up leaked tabs later
+	var primaryID target.ID
+	if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		primaryID = chromedp.FromContext(ctx).Target.TargetID
+		return nil
+	})); err != nil {
+		log.Printf("%s: could not get primary target ID: %v", name, err)
+	}
+
+	log.Printf("%s backend ready (persistent tab %s)", name, primaryID)
 
 	return &CDPBackend{
 		allocCtx:    allocCtx,
 		allocCancel: allocCancel,
 		tabCtx:      tabCtx,
 		tabCancel:   tabCancel,
+		primaryID:   primaryID,
 		cmd:         cmd,
 		started:     time.Now(),
 		name:        name,
@@ -182,6 +194,9 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		return nil, fmt.Errorf("collecting results: %w", err)
 	}
 
+	// Clean up any extra tabs Chrome may have opened (popups, redirects)
+	b.cleanupExtraTabs()
+
 	apiCookies := make([]api.Cookie, len(cookies))
 	for i, c := range cookies {
 		apiCookies[i] = api.Cookie{
@@ -201,6 +216,28 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		HTML:    html,
 		Cookies: apiCookies,
 	}, nil
+}
+
+// cleanupExtraTabs closes any page targets that aren't our primary tab.
+// Chrome can open new tabs via popups, CF challenge redirects, or extensions.
+func (b *CDPBackend) cleanupExtraTabs() {
+	if b.primaryID == "" {
+		return
+	}
+
+	targets, err := chromedp.Targets(b.allocCtx)
+	if err != nil {
+		return
+	}
+
+	for _, t := range targets {
+		if t.Type == "page" && t.TargetID != b.primaryID {
+			ctx, cancel := chromedp.NewContext(b.allocCtx, chromedp.WithTargetID(t.TargetID))
+			chromedp.Run(ctx, page.Close())
+			cancel()
+			log.Printf("closed leaked tab: %s (%s)", t.TargetID, t.URL)
+		}
+	}
 }
 
 // executeAction runs a single browser automation step via JS evaluation.
