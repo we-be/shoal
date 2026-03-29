@@ -18,6 +18,7 @@ const (
 	BackendStub       = "stub"
 	BackendCDP        = "cdp"
 	BackendLightpanda = "lightpanda"
+	BackendChrome     = "chrome"
 	BackendTLSClient  = "tls-client"
 )
 

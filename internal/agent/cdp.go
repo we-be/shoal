@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/we-be/shoal/internal/api"
 )
@@ -76,18 +77,48 @@ func NewLightpandaBackend(binPath string, cdpPort int) (*CDPBackend, error) {
 
 // initCDPBackend creates a persistent browser tab that lives for the agent's lifetime.
 func initCDPBackend(allocCtx context.Context, allocCancel context.CancelFunc, cmd *exec.Cmd, name string) (*CDPBackend, error) {
-	// Create ONE persistent tab — this is the fish's body.
-	// All navigations reuse this tab so cookies persist.
+	// Try creating a new tab. If that fails (e.g. Flatpak Chrome),
+	// attach to an existing one instead.
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-
-	// Warm up the tab
 	if err := chromedp.Run(tabCtx, chromedp.Navigate("about:blank")); err != nil {
 		tabCancel()
-		allocCancel()
-		if cmd != nil {
-			cmd.Process.Kill()
+		log.Printf("%s: new tab failed (%v), looking for existing target...", name, err)
+
+		// Find an existing page target to attach to
+		targets, findErr := chromedp.Targets(allocCtx)
+		if findErr != nil {
+			allocCancel()
+			if cmd != nil {
+				cmd.Process.Kill()
+			}
+			return nil, fmt.Errorf("finding existing targets: %w", findErr)
 		}
-		return nil, fmt.Errorf("initializing browser tab: %w", err)
+
+		var targetID target.ID
+		for _, t := range targets {
+			if t.Type == "page" {
+				targetID = t.TargetID
+				log.Printf("%s: found existing page target %s (%s)", name, t.TargetID, t.URL)
+				break
+			}
+		}
+		if targetID == "" {
+			allocCancel()
+			if cmd != nil {
+				cmd.Process.Kill()
+			}
+			return nil, fmt.Errorf("no existing page targets found")
+		}
+
+		tabCtx, tabCancel = chromedp.NewContext(allocCtx, chromedp.WithTargetID(targetID))
+		if err := chromedp.Run(tabCtx, chromedp.Navigate("about:blank")); err != nil {
+			tabCancel()
+			allocCancel()
+			if cmd != nil {
+				cmd.Process.Kill()
+			}
+			return nil, fmt.Errorf("attaching to existing target: %w", err)
+		}
 	}
 
 	log.Printf("%s backend ready (persistent tab initialized)", name)
