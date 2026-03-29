@@ -46,7 +46,7 @@ func (a *Agent) registerLoop() {
 
 	req := api.RegisterRequest{
 		Address: a.listenAddr,
-		Backend: "stub",
+		Backend: a.backend.Health().Backend,
 	}
 
 	body, _ := json.Marshal(req)
