@@ -2,30 +2,48 @@ services:
   controller:
     build:
       context: .
-      dockerfile: Dockerfile
       args:
         BINARY: controller
     ports:
       - "8180:8180"
     command: ["/shoal", "-addr", ":8180"]
 
-  # Two agents in the school
-  agent-1:
+  # Grouper: Chrome + xvfb for CF solving
+  grouper:
     build:
       context: .
-      dockerfile: Dockerfile
-      args:
-        BINARY: agent
-    command: ["/shoal", "-addr", ":8181", "-controller", "http://controller:8180"]
+      dockerfile: Dockerfile.grouper
+    command: >
+      sh -c "Xvfb :99 -screen 0 1920x1080x24 -ac &>/dev/null & sleep 1 &&
+        /agent -addr :8181 -controller http://controller:8180
+        -backend chrome -lightpanda-port 9333"
     depends_on:
       - controller
 
-  agent-2:
+  # Minnows: lightweight tls-client for bulk requests
+  minnow-1:
     build:
       context: .
-      dockerfile: Dockerfile
       args:
         BINARY: agent
-    command: ["/shoal", "-addr", ":8181", "-controller", "http://controller:8180"]
+    command: ["/shoal", "-addr", ":8181", "-controller", "http://controller:8180", "-backend", "tls-client"]
+    depends_on:
+      - controller
+
+  minnow-2:
+    build:
+      context: .
+      args:
+        BINARY: agent
+    command: ["/shoal", "-addr", ":8181", "-controller", "http://controller:8180", "-backend", "tls-client"]
+    depends_on:
+      - controller
+
+  minnow-3:
+    build:
+      context: .
+      args:
+        BINARY: agent
+    command: ["/shoal", "-addr", ":8181", "-controller", "http://controller:8180", "-backend", "tls-client"]
     depends_on:
       - controller

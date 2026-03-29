@@ -1,5 +1,7 @@
 # Shoal
 
+[![CI](https://github.com/we-be/shoal/actions/workflows/ci.yml/badge.svg)](https://github.com/we-be/shoal/actions/workflows/ci.yml)
+
 Browser orchestration platform — scale headless browsers like a school of fish.
 
 Shoal separates **browser orchestration** (pool management, leasing, routing, scaling) from **browser automation** (the actual rendering engine). One Chrome "grouper" solves Cloudflare challenges, then a school of lightweight "minnows" ride the earned cookies for fast parallel scraping.
@@ -22,9 +24,9 @@ Shoal separates **browser orchestration** (pool management, leasing, routing, sc
  full JS rendering             Chrome TLS fingerprint
 ```
 
-**Controller** — manages the agent pool, leases, and routing. Tracks each browser's identity (cookies, CF clearance, domain history) and prefers "warm" agents that already have cookies for a requested domain. Automatically pushes `cf_clearance` cookies from groupers to minnows.
+**Controller** — manages the agent pool, leases, and routing. Tracks each browser's identity (cookies, CF clearance, domain history) and prefers "warm" agents that already have cookies for a requested domain. Automatically pushes `cf_clearance` cookies from groupers to minnows. Serves a live dashboard and Prometheus metrics.
 
-**Grouper** (heavy agent) — full Chrome browser with stealth injection (`navigator.webdriver` hidden, no `--headless` flag, xvfb-compatible). Solves Cloudflare Turnstile challenges and earns clearance cookies.
+**Grouper** (heavy agent) — full Chrome browser with stealth injection (`navigator.webdriver` hidden, no `--headless` flag, xvfb-compatible). Solves Cloudflare Turnstile challenges and earns clearance cookies. Supports authenticated proxies via CDP `Fetch.continueWithAuth`.
 
 **Minnow** (light agent) — HTTP client with Chrome's exact TLS fingerprint (JA3/JA4) via [tls-client](https://github.com/bogdanfinn/tls-client). No browser overhead. Accepts injected cookies from groupers and makes fast bulk requests that Cloudflare can't distinguish from the real Chrome that earned the clearance.
 
@@ -56,9 +58,22 @@ make run-cf MINNOW_COUNT=20
 # Start Lightpanda cluster (3 agents, no CF bypass)
 make run
 
+# Docker Compose (1 grouper + 3 minnows)
+docker compose up
+
 # Stop everything
 make stop
 ```
+
+## Dashboard
+
+Live web dashboard at `http://localhost:8180/dashboard` — auto-refreshes every 2s.
+
+- **Pool gauges** — total/available/leased agents with utilization bar
+- **Fleet overview** — grouper vs minnow counts, CF clearance status
+- **Throughput chart** — requests per 5-second bucket (10-minute rolling window)
+- **Error + CF chart** — errors in red, CF solves in cyan
+- **Agent table** — every fish with its name, backend, class, state, IP, domain history, cookies
 
 ## API
 
@@ -93,17 +108,14 @@ curl -X POST localhost:8180/release \
   -d '{"lease_id": "lease-abc123"}'
 ```
 
-### Pool status
+### Status & observability
 
 ```bash
-# Pool counts
-curl localhost:8180/pool/status
-
-# All agent identities (cookies, domains, CF clearance, visit history)
-curl localhost:8180/pool/agents
-
-# Controller health
-curl localhost:8180/health
+curl localhost:8180/pool/status       # pool counts
+curl localhost:8180/pool/agents       # all agent identities
+curl localhost:8180/health            # controller health
+curl localhost:8180/metrics           # prometheus metrics
+open localhost:8180/dashboard         # live web UI
 ```
 
 ## Browser Backends
@@ -127,6 +139,26 @@ Five backends ship today:
 | **CDP** | heavy | Connect to any CDP-speaking browser | `-backend cdp -cdp-url ws://...` |
 | **tls-client** | light | Bulk HTTP with Chrome TLS fingerprint | `-backend tls-client` |
 | **Stub** | heavy | Testing (plain HTTP GET) | `-backend stub` |
+
+## Proxy Support
+
+Both grouper and minnow agents accept proxy configuration:
+
+```bash
+# Grouper with authenticated proxy (CDP Fetch auth, Chrome 137+ compatible)
+bin/agent -backend chrome \
+  -proxy-url http://proxy.example.com:8080 \
+  -proxy-user myuser \
+  -proxy-pass mypass
+
+# Minnow with same proxy (required — CF cookies are bound to IP)
+bin/agent -backend tls-client \
+  -proxy-url http://proxy.example.com:8080 \
+  -proxy-user myuser \
+  -proxy-pass mypass
+```
+
+The grouper uses Chrome's `--proxy-server` flag for routing and CDP `Fetch.continueWithAuth` for authentication (Chrome 137+ broke extension-based proxy auth). Minnows use tls-client's native proxy support.
 
 ## Browser Identity
 
@@ -154,36 +186,62 @@ When a grouper earns `cf_clearance`, the controller automatically pushes all coo
 1. Same `cf_clearance` cookie
 2. Same TLS fingerprint (Chrome 146 JA3/JA4)
 3. Same User-Agent string
-4. Same IP address
+4. Same IP address (use same proxy for grouper and minnows)
+
+## Docker
+
+Three images:
+
+| Image | Dockerfile | Contents | Size |
+|-------|-----------|----------|------|
+| Controller | `Dockerfile` (BINARY=controller) | Static Go binary | ~10MB |
+| Minnow | `Dockerfile` (BINARY=agent) | Static Go binary | ~15MB |
+| Grouper | `Dockerfile.grouper` | Go binary + Chrome + xvfb + fonts | ~500MB |
+
+```bash
+# Build individually
+docker build --build-arg BINARY=controller -t shoal-controller .
+docker build --build-arg BINARY=agent -t shoal-minnow .
+docker build -f Dockerfile.grouper -t shoal-grouper .
+
+# Or use compose
+docker compose up
+```
 
 ## Project Structure
 
 ```
 shoal/
 ├── cmd/
-│   ├── controller/main.go      # Controller binary
-│   └── agent/main.go           # Agent binary (all backends)
+│   ├── controller/main.go         # Controller binary
+│   └── agent/main.go              # Agent binary (all backends)
 ├── internal/
 │   ├── controller/
-│   │   ├── server.go           # HTTP API, cookie handoff
-│   │   ├── pool.go             # Agent pool, leases, warm matching
-│   │   └── identity.go         # Fish names, domain tracking
+│   │   ├── server.go              # HTTP API, cookie handoff
+│   │   ├── pool.go                # Agent pool, leases, warm matching
+│   │   ├── identity.go            # Fish names, domain tracking
+│   │   ├── metrics.go             # Prometheus metrics
+│   │   ├── dashboard.go           # Built-in web dashboard
+│   │   └── timeseries.go          # Event log for dashboard charts
 │   ├── agent/
-│   │   ├── server.go           # Agent HTTP API
-│   │   ├── backend.go          # BrowserBackend interface + stub
-│   │   ├── cdp.go              # CDP backend (Lightpanda, generic)
-│   │   ├── chrome.go           # Chrome with stealth + xvfb
-│   │   └── tlsclient.go        # tls-client minnow backend
+│   │   ├── server.go              # Agent HTTP API + cookie injection
+│   │   ├── backend.go             # BrowserBackend interface + stub
+│   │   ├── cdp.go                 # CDP backend (Lightpanda, generic)
+│   │   ├── chrome.go              # Chrome with stealth + xvfb + proxy auth
+│   │   └── tlsclient.go           # tls-client minnow backend
 │   └── api/
-│       ├── types.go            # Shared request/response types
-│       └── constants.go        # Agent classes, states, backends
+│       ├── types.go               # Shared request/response types
+│       └── constants.go           # Agent classes, states, backends
 ├── examples/
-│   ├── scrape.py               # LB + identity test
-│   ├── login_test.py           # Auth persistence test
-│   ├── hlcu_test.py            # Hapag-Lloyd tracking test
-│   ├── scale_test.py           # Multi-minnow parallel scaling
-│   └── testsite/main.go        # Auth-gated test site
-├── Makefile                    # build, run, run-cf, stop
-├── Dockerfile
-└── docker-compose.yml
+│   ├── scrape.py                  # LB + identity test
+│   ├── login_test.py              # Auth persistence test
+│   ├── hlcu_test.py               # Hapag-Lloyd tracking test
+│   ├── scale_test.py              # Multi-minnow parallel scaling
+│   └── testsite/main.go           # Auth-gated test site
+├── .github/workflows/ci.yml       # Build + vet + test, release on tag
+├── Dockerfile                     # Controller / minnow (distroless)
+├── Dockerfile.grouper             # Chrome + xvfb (debian)
+├── docker-compose.yml             # Full CF cluster
+├── Makefile                       # build, run, run-cf, stop
+└── CHANGELOG.md
 ```

@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: |
+          go build -o bin/controller ./cmd/controller
+          go build -o bin/agent ./cmd/agent
+          go build -o bin/testsite ./examples/testsite
+          echo "controller: $(du -h bin/controller | cut -f1)"
+          echo "agent:      $(du -h bin/agent | cut -f1)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release:')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(head -1 CHANGELOG.md | grep -oP 'v\d+\.\d+\.\d+')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION"
+
+      - name: Build release binaries
+        run: |
+          for GOOS in linux darwin; do
+            for GOARCH in amd64 arm64; do
+              out="shoal-${GOOS}-${GOARCH}"
+              mkdir -p "dist/${out}"
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w" -o "dist/${out}/controller" ./cmd/controller
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w" -o "dist/${out}/agent" ./cmd/agent
+              tar -czf "dist/${out}.tar.gz" -C dist "${out}"
+            done
+          done
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          # Extract changelog for this version
+          awk '/^## /{if(p)exit; p=1} p' CHANGELOG.md > /tmp/release-notes.md
+          gh release create "$VERSION" dist/*.tar.gz \
+            --title "$VERSION" \
+            --notes-file /tmp/release-notes.md

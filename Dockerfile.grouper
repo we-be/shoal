@@ -1,0 +1,30 @@
+## Chrome grouper image — full browser with xvfb for CF Turnstile solving.
+## Heavy but capable. One per shoal is usually enough.
+FROM golang:1.24-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o /agent ./cmd/agent
+
+FROM debian:bookworm-slim
+
+# Install xvfb, fonts (required for CF widget rendering), and Chrome deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xvfb dumb-init curl gnupg wget ca-certificates procps \
+    fonts-liberation fonts-noto fonts-freefont-ttf fontconfig \
+    libnss3 libxss1 libasound2 libatk-bridge2.0-0 libgtk-3-0 libgbm1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Chrome
+RUN wget -qO- https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /agent /agent
+
+ENV DISPLAY=:99
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1920x1080x24 -ac &>/dev/null & sleep 1 && /agent -backend chrome \"$@\"", "--"]
