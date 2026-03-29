@@ -146,20 +146,21 @@ func TestClassFilter(t *testing.T) {
 func TestWarmMatching(t *testing.T) {
 	pool := NewPool()
 
-	id1 := pool.Register(api.RegisterRequest{Address: ":8181", Backend: api.BackendStub})
+	pool.Register(api.RegisterRequest{Address: ":8181", Backend: api.BackendStub})
 	pool.Register(api.RegisterRequest{Address: ":8182", Backend: api.BackendStub})
 
-	// Build warmth on agent 1
+	// Build warmth on whichever agent we get first
 	lease, _ := pool.Acquire(api.LeaseRequest{Consumer: "test", Domain: "warm.com"})
+	warmAgent := lease.AgentID
 	pool.RecordNavigation(lease.ID, "https://warm.com/page", []api.Cookie{
 		{Name: "session", Value: "abc", Domain: "warm.com"},
 	})
 	pool.Release(lease.ID)
 
-	// Next lease for warm.com should prefer agent 1
+	// Next lease for warm.com should prefer the warm agent
 	lease2, _ := pool.Acquire(api.LeaseRequest{Consumer: "test", Domain: "warm.com"})
-	if lease2.AgentID != id1 {
-		t.Fatalf("expected warm match to %s, got %s", id1, lease2.AgentID)
+	if lease2.AgentID != warmAgent {
+		t.Fatalf("expected warm match to %s, got %s", warmAgent, lease2.AgentID)
 	}
 	pool.Release(lease2.ID)
 }

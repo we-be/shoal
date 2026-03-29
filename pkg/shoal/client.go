@@ -81,7 +81,8 @@ func (c *Client) Lease(ctx context.Context, consumer, domain, class string) (*Le
 	return &resp, nil
 }
 
-// Navigate sends a request through a leased agent. Actions are optional.
+// Navigate sends a request through a leased agent. URL and actions are optional.
+// Pass url="" to execute actions on the current page without navigating (stateful flows).
 func (c *Client) Navigate(ctx context.Context, leaseID, url string, actions []Action) (*NavigateResponse, error) {
 	req := api.RequestPayload{
 		LeaseID: leaseID,

@@ -157,17 +157,21 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 	navCtx, navCancel := context.WithTimeout(b.tabCtx, timeout)
 	defer navCancel()
 
-	// Navigate to the URL
-	if err := chromedp.Run(navCtx,
-		chromedp.Navigate(req.URL),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-	); err != nil {
-		return nil, fmt.Errorf("navigating to %s: %w", req.URL, err)
+	// Navigate to the URL (skip if empty — allows stateful multi-step flows)
+	if req.URL != "" {
+		if err := chromedp.Run(navCtx,
+			chromedp.Navigate(req.URL),
+			chromedp.WaitReady("body", chromedp.ByQuery),
+		); err != nil {
+			return nil, fmt.Errorf("navigating to %s: %w", req.URL, err)
+		}
 	}
 
-	// Detect and wait for CF challenge resolution
-	if err := waitForCFChallenge(navCtx); err != nil {
-		log.Printf("cf challenge wait: %v", err)
+	// Detect and wait for CF challenge resolution (only on fresh navigations)
+	if req.URL != "" {
+		if err := waitForCFChallenge(navCtx); err != nil {
+			log.Printf("cf challenge wait: %v", err)
+		}
 	}
 
 	// Execute post-navigation actions (fill forms, click buttons, etc.)

@@ -153,8 +153,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.LeaseID == "" || req.URL == "" {
-		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: "lease_id and url are required"})
+	if req.LeaseID == "" {
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: "lease_id is required"})
 		return
 	}
 

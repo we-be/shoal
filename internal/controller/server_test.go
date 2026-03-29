@@ -204,9 +204,11 @@ func TestServerBadRequests(t *testing.T) {
 	var lease api.LeaseResponse
 	json.NewDecoder(leaseW.Body).Decode(&lease)
 
-	w = postJSON(srv, "/request", api.RequestPayload{LeaseID: lease.LeaseID, URL: ""})
+	// Request with empty URL is allowed (stateful multi-step flows, issue #7)
+	// but missing lease_id should still be 400
+	w = postJSON(srv, "/request", api.RequestPayload{LeaseID: "", URL: ""})
 	if w.Code != 400 {
-		t.Fatalf("expected 400 for missing URL, got %d", w.Code)
+		t.Fatalf("expected 400 for missing lease_id, got %d", w.Code)
 	}
 
 	// Release nonexistent lease
