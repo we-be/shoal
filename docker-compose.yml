@@ -1,0 +1,31 @@
+services:
+  controller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: controller
+    ports:
+      - "8180:8180"
+    command: ["/shoal", "-addr", ":8180"]
+
+  # Two agents in the school
+  agent-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: agent
+    command: ["/shoal", "-addr", ":8181", "-controller", "http://controller:8180"]
+    depends_on:
+      - controller
+
+  agent-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: agent
+    command: ["/shoal", "-addr", ":8181", "-controller", "http://controller:8180"]
+    depends_on:
+      - controller
