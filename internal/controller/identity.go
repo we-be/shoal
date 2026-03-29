@@ -27,12 +27,13 @@ func newFishID() string {
 }
 
 // newIdentity creates a fresh browser identity.
-func newIdentity(backend, ip string) *api.BrowserIdentity {
+func newIdentity(backend, class, ip string) *api.BrowserIdentity {
 	now := time.Now()
 	return &api.BrowserIdentity{
 		ID:        newFishID(),
 		IP:        ip,
 		Backend:   backend,
+		Class:     class,
 		CreatedAt: now,
 		LastUsed:  now,
 		UseCount:  0,

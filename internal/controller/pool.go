@@ -13,6 +13,7 @@ import (
 type ManagedAgent struct {
 	Address  string              `json:"address"`
 	Backend  string              `json:"backend"`
+	Class    string              `json:"class"` // "heavy" (grouper) or "light" (minnow)
 	State    string              `json:"state"` // "available", "leased"
 	Identity *api.BrowserIdentity `json:"identity"`
 }
@@ -44,12 +45,24 @@ func (p *Pool) Register(req api.RegisterRequest) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	identity := newIdentity(req.Backend, req.IP)
+	class := req.Class
+	if class == "" {
+		// Infer class from backend type
+		switch req.Backend {
+		case api.BackendTLSClient:
+			class = api.ClassLight
+		default:
+			class = api.ClassHeavy
+		}
+	}
+
+	identity := newIdentity(req.Backend, class, req.IP)
 
 	p.agents[identity.ID] = &ManagedAgent{
 		Address:  req.Address,
 		Backend:  req.Backend,
-		State:    "available",
+		Class:    class,
+		State:    api.StateAvailable,
 		Identity: identity,
 	}
 
@@ -57,7 +70,7 @@ func (p *Pool) Register(req api.RegisterRequest) string {
 }
 
 // Acquire finds the best available agent for the requested domain.
-// Preference order: warm (has CF clearance) > tepid (has cookies) > cold.
+// Filters by class if specified, then ranks by domain warmth.
 func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -67,7 +80,12 @@ func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 	bestWarmth := -1
 
 	for id, a := range p.agents {
-		if a.State != "available" {
+		if a.State != api.StateAvailable {
+			continue
+		}
+
+		// Filter by class if requested
+		if req.Class != "" && a.Class != req.Class {
 			continue
 		}
 
@@ -80,10 +98,10 @@ func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 	}
 
 	if bestAgent == nil {
-		return nil, fmt.Errorf("pool_exhausted")
+		return nil, fmt.Errorf(api.ErrPoolExhausted)
 	}
 
-	bestAgent.State = "leased"
+	bestAgent.State = api.StateLeased
 
 	leaseID := newLeaseID()
 	lease := &Lease{
@@ -108,12 +126,12 @@ func (p *Pool) Release(leaseID string) error {
 
 	lease, ok := p.leases[leaseID]
 	if !ok {
-		return fmt.Errorf("lease_not_found")
+		return fmt.Errorf(api.ErrLeaseNotFound)
 	}
 
 	agent, ok := p.agents[lease.AgentID]
 	if ok {
-		agent.State = "available"
+		agent.State = api.StateAvailable
 	}
 
 	delete(p.leases, leaseID)
@@ -127,15 +145,29 @@ func (p *Pool) GetAgent(leaseID string) (*ManagedAgent, error) {
 
 	lease, ok := p.leases[leaseID]
 	if !ok {
-		return nil, fmt.Errorf("lease_not_found")
+		return nil, fmt.Errorf(api.ErrLeaseNotFound)
 	}
 
 	agent, ok := p.agents[lease.AgentID]
 	if !ok {
-		return nil, fmt.Errorf("agent_not_found")
+		return nil, fmt.Errorf(api.ErrAgentNotFound)
 	}
 
 	return agent, nil
+}
+
+// LightAgents returns all available light-class agents (minnows).
+func (p *Pool) LightAgents() []*ManagedAgent {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	var out []*ManagedAgent
+	for _, a := range p.agents {
+		if a.Class == api.ClassLight {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // RecordNavigation updates an agent's identity after a navigation.
@@ -165,9 +197,9 @@ func (p *Pool) Status() api.PoolStatus {
 	leased := 0
 	for _, a := range p.agents {
 		switch a.State {
-		case "available":
+		case api.StateAvailable:
 			available++
-		case "leased":
+		case api.StateLeased:
 			leased++
 		}
 	}

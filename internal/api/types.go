@@ -8,7 +8,8 @@ import "time"
 // RegisterRequest is sent by an agent to the controller on startup.
 type RegisterRequest struct {
 	Address string `json:"address"` // host:port the agent is listening on
-	Backend string `json:"backend"` // backend type: "stub", "lightpanda", "chrome", etc.
+	Backend string `json:"backend"` // backend type: "stub", "lightpanda", "chrome", "tls-client", etc.
+	Class   string `json:"class"`   // "heavy" (full browser) or "light" (HTTP client)
 	IP      string `json:"ip,omitempty"` // external IP of the agent
 }
 
@@ -19,8 +20,9 @@ type RegisterResponse struct {
 // --- Lease API (client -> controller) ---
 
 type LeaseRequest struct {
-	Consumer string `json:"consumer"` // who's requesting, e.g. "oolu-scraper"
-	Domain   string `json:"domain"`   // target domain, e.g. "hapag-lloyd.com"
+	Consumer string `json:"consumer"`         // who's requesting, e.g. "oolu-scraper"
+	Domain   string `json:"domain"`           // target domain, e.g. "hapag-lloyd.com"
+	Class    string `json:"class,omitempty"`   // "heavy", "light", or "" (auto)
 }
 
 type LeaseResponse struct {
@@ -71,6 +73,13 @@ type Cookie struct {
 	Expires  float64 `json:"expires,omitempty"` // seconds since epoch, -1 for session
 }
 
+// --- Cookie Injection (controller -> agent) ---
+
+type SetCookiesRequest struct {
+	URL     string   `json:"url"`
+	Cookies []Cookie `json:"cookies"`
+}
+
 // --- Request (client -> controller, routed to agent) ---
 
 type RequestPayload struct {
@@ -97,6 +106,7 @@ type BrowserIdentity struct {
 	ID        string                  `json:"id"`         // e.g. "redfish-a3b2"
 	IP        string                  `json:"ip,omitempty"`
 	Backend   string                  `json:"backend"`
+	Class     string                  `json:"class"`      // "heavy" (grouper) or "light" (minnow)
 	CreatedAt time.Time               `json:"created_at"`
 	LastUsed  time.Time               `json:"last_used"`
 	UseCount  int                     `json:"use_count"`

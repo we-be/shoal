@@ -55,7 +55,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req api.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: "bad_request", Detail: err.Error()})
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: err.Error()})
 		return
 	}
 
@@ -70,7 +70,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLease(w http.ResponseWriter, r *http.Request) {
 	var req api.LeaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: "bad_request", Detail: err.Error()})
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: err.Error()})
 		return
 	}
 
@@ -78,7 +78,7 @@ func (s *Server) handleLease(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("lease denied: %v", err)
 		writeJSON(w, http.StatusServiceUnavailable, api.ErrorResponse{
-			Error:  "pool_exhausted",
+			Error:  api.ErrPoolExhausted,
 			Detail: "no agents available — the shoal is fully committed",
 		})
 		return
@@ -95,18 +95,18 @@ func (s *Server) handleLease(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var req api.RequestPayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: "bad_request", Detail: err.Error()})
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: err.Error()})
 		return
 	}
 
 	if req.LeaseID == "" || req.URL == "" {
-		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: "bad_request", Detail: "lease_id and url are required"})
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: "lease_id and url are required"})
 		return
 	}
 
 	agent, err := s.pool.GetAgent(req.LeaseID)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, api.ErrorResponse{Error: "lease_not_found", Detail: err.Error()})
+		writeJSON(w, http.StatusNotFound, api.ErrorResponse{Error: api.ErrLeaseNotFound, Detail: err.Error()})
 		return
 	}
 
@@ -119,12 +119,17 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.forwardToAgent(agent, navReq)
 	if err != nil {
 		log.Printf("agent %s error: %v", agent.Identity.ID, err)
-		writeJSON(w, http.StatusBadGateway, api.ErrorResponse{Error: "agent_error", Detail: err.Error()})
+		writeJSON(w, http.StatusBadGateway, api.ErrorResponse{Error: api.ErrAgentError, Detail: err.Error()})
 		return
 	}
 
 	// Record what this fish learned — cookies, CF clearance, domain state
 	s.pool.RecordNavigation(req.LeaseID, req.URL, resp.Cookies)
+
+	// If a grouper just earned CF clearance, hand the cookies to minnows
+	if agent.Class == api.ClassHeavy && hasCFClearance(resp.Cookies) {
+		go s.propagateCookiesToMinnows(req.URL, resp.Cookies)
+	}
 
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -132,17 +137,17 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
 	var req api.ReleaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: "bad_request", Detail: err.Error()})
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: err.Error()})
 		return
 	}
 
 	if err := s.pool.Release(req.LeaseID); err != nil {
-		writeJSON(w, http.StatusNotFound, api.ErrorResponse{Error: "lease_not_found", Detail: err.Error()})
+		writeJSON(w, http.StatusNotFound, api.ErrorResponse{Error: api.ErrLeaseNotFound, Detail: err.Error()})
 		return
 	}
 
 	log.Printf("lease released: %s", req.LeaseID)
-	writeJSON(w, http.StatusOK, api.ReleaseResponse{Status: "ok"})
+	writeJSON(w, http.StatusOK, api.ReleaseResponse{Status: api.HealthOK})
 }
 
 // --- Status & Identity ---
@@ -157,12 +162,12 @@ func (s *Server) handlePoolAgents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := s.pool.Status()
-	health := "ok"
+	health := api.HealthOK
 	if status.Total > 0 && status.Available == 0 {
-		health = "saturated"
+		health = api.HealthSaturated
 	}
 	if status.Total == 0 {
-		health = "no_agents"
+		health = api.HealthNoAgents
 	}
 
 	writeJSON(w, http.StatusOK, api.HealthStatus{
@@ -203,6 +208,49 @@ func (s *Server) forwardToAgent(agent *ManagedAgent, req api.NavigateRequest) (*
 	}
 
 	return &navResp, nil
+}
+
+// propagateCookiesToMinnows pushes cookies from a grouper to all light agents.
+// This is the handoff — the grouper earned cf_clearance, now the minnows
+// can make fast requests with it.
+func (s *Server) propagateCookiesToMinnows(navURL string, cookies []api.Cookie) {
+	minnows := s.pool.LightAgents()
+	if len(minnows) == 0 {
+		return
+	}
+
+	setCookiesReq := api.SetCookiesRequest{
+		URL:     navURL,
+		Cookies: cookies,
+	}
+	body, err := json.Marshal(setCookiesReq)
+	if err != nil {
+		log.Printf("failed to marshal cookies for minnow handoff: %v", err)
+		return
+	}
+
+	for _, m := range minnows {
+		go func(addr string, id string) {
+			url := fmt.Sprintf("http://%s/cookies/set", addr)
+			resp, err := s.client.Post(url, "application/json", bytes.NewReader(body))
+			if err != nil {
+				log.Printf("cookie handoff to %s failed: %v", id, err)
+				return
+			}
+			resp.Body.Close()
+			log.Printf("cookie handoff to %s: %d cookies for %s", id, len(cookies), navURL)
+		}(m.Address, m.Identity.ID)
+	}
+}
+
+// hasCFClearance checks if a cookie set contains cf_clearance.
+func hasCFClearance(cookies []api.Cookie) bool {
+	for _, c := range cookies {
+		if c.Name == "cf_clearance" {
+			return true
+		}
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

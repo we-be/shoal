@@ -44,7 +44,7 @@ func NewCDPBackend(wsURL string) (*CDPBackend, error) {
 	}
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), resolved)
-	return initCDPBackend(allocCtx, allocCancel, nil, "cdp")
+	return initCDPBackend(allocCtx, allocCancel, nil, api.BackendCDP)
 }
 
 // NewLightpandaBackend launches a Lightpanda process and connects via CDP.
@@ -71,7 +71,7 @@ func NewLightpandaBackend(binPath string, cdpPort int) (*CDPBackend, error) {
 	}
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
-	return initCDPBackend(allocCtx, allocCancel, cmd, "lightpanda")
+	return initCDPBackend(allocCtx, allocCancel, cmd, api.BackendLightpanda)
 }
 
 // initCDPBackend creates a persistent browser tab that lives for the agent's lifetime.
@@ -215,11 +215,11 @@ func executeAction(ctx context.Context, action api.Action) error {
 }
 
 func (b *CDPBackend) Health() api.HealthStatus {
-	status := "ok"
+	status := api.HealthOK
 
 	if b.cmd != nil && b.cmd.Process != nil {
 		if err := b.cmd.Process.Signal(syscall.Signal(0)); err != nil {
-			status = "unhealthy"
+			status = api.HealthUnhealthy
 		}
 	}
 

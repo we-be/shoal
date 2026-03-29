@@ -10,10 +10,11 @@ import (
 func main() {
 	addr := flag.String("addr", ":8181", "address to listen on")
 	controller := flag.String("controller", "http://localhost:8180", "controller URL")
-	backendType := flag.String("backend", "stub", "browser backend: stub, cdp, lightpanda")
+	backendType := flag.String("backend", "stub", "browser backend: stub, cdp, lightpanda, tls-client")
 	cdpURL := flag.String("cdp-url", "", "CDP WebSocket URL (for cdp backend)")
 	lpBin := flag.String("lightpanda-bin", "lightpanda", "path to lightpanda binary")
 	lpPort := flag.Int("lightpanda-port", 9222, "CDP port for lightpanda subprocess")
+	userAgent := flag.String("user-agent", "", "User-Agent string (for tls-client backend)")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -34,6 +35,9 @@ func main() {
 	case "lightpanda":
 		log.Printf("using lightpanda backend (bin=%s, port=%d)", *lpBin, *lpPort)
 		backend, err = agent.NewLightpandaBackend(*lpBin, *lpPort)
+	case "tls-client":
+		log.Printf("using tls-client backend (minnow)")
+		backend, err = agent.NewTLSClientBackend(*userAgent)
 	default:
 		log.Fatalf("unknown backend: %s", *backendType)
 	}

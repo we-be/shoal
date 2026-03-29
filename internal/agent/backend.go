@@ -70,8 +70,8 @@ func (s *StubBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*a
 
 func (s *StubBackend) Health() api.HealthStatus {
 	return api.HealthStatus{
-		Status:  "ok",
-		Backend: "stub",
+		Status:  api.HealthOK,
+		Backend: api.BackendStub,
 		Uptime:  int64(time.Since(s.started).Seconds()),
 	}
 }
