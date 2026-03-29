@@ -16,15 +16,17 @@ import (
 
 // Server is the controller's HTTP server — the tide that directs the shoal.
 type Server struct {
-	pool    *Pool
-	mux     *http.ServeMux
-	client  *http.Client
-	started time.Time
+	pool     *Pool
+	events   *EventLog
+	mux      *http.ServeMux
+	client   *http.Client
+	started  time.Time
 }
 
 func NewServer() *Server {
 	s := &Server{
 		pool: NewPool(),
+		events: NewEventLog(10 * time.Minute),
 		client: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -48,6 +50,7 @@ func NewServer() *Server {
 	// Dashboard & metrics
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	s.mux.HandleFunc("GET /dashboard/agents", s.handleDashboardAgents)
+	s.mux.HandleFunc("GET /dashboard/timeseries", s.handleTimeseries)
 	s.mux.Handle("GET /metrics", promhttp.Handler())
 
 	return s
@@ -132,11 +135,13 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("agent %s error: %v", agent.Identity.ID, err)
 		requestsTotal.WithLabelValues(domain, agent.Class, "error").Inc()
+		s.events.Record("error", domain, agent.Class)
 		writeJSON(w, http.StatusBadGateway, api.ErrorResponse{Error: api.ErrAgentError, Detail: err.Error()})
 		return
 	}
 
 	requestsTotal.WithLabelValues(domain, agent.Class, "ok").Inc()
+	s.events.Record("ok", domain, agent.Class)
 
 	// Record what this fish learned — cookies, CF clearance, domain state
 	s.pool.RecordNavigation(req.LeaseID, req.URL, resp.Cookies)
@@ -144,6 +149,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// If a grouper just earned CF clearance, hand the cookies to minnows
 	if agent.Class == api.ClassHeavy && hasCFClearance(resp.Cookies) {
 		cfSolvesTotal.Inc()
+		s.events.Record("cf_solve", domain, agent.Class)
 		go s.propagateCookiesToMinnows(req.URL, resp.Cookies)
 	}
 

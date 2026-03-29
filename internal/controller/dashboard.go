@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 const dashboardHTML = `<!DOCTYPE html>
@@ -46,6 +47,8 @@ const dashboardHTML = `<!DOCTYPE html>
   .bar-red { background: #f85149; }
   .pulse { animation: pulse 2s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  canvas { width: 100% !important; height: 120px !important; }
   .footer { color: #484f58; font-size: 11px; margin-top: 20px; text-align: center; }
   .refresh-indicator { position: fixed; top: 12px; right: 20px; font-size: 11px; color: #484f58; }
 </style>
@@ -57,6 +60,17 @@ const dashboardHTML = `<!DOCTYPE html>
 <div class="refresh-indicator pulse" id="tick"></div>
 
 <div class="grid" id="stats"></div>
+
+<div class="charts">
+  <div class="card">
+    <h2>throughput (req/5s)</h2>
+    <canvas id="chart-throughput"></canvas>
+  </div>
+  <div class="card">
+    <h2>errors & cf solves</h2>
+    <canvas id="chart-errors"></canvas>
+  </div>
+</div>
 
 <div class="card" style="margin-bottom: 16px">
   <h2>the school</h2>
@@ -207,16 +221,123 @@ function miniStat(val, label, color) {
   return '<div><div class="stat-sm ' + color + '">' + val + '</div><div class="stat-label">' + label + '</div></div>';
 }
 
+// --- Canvas timeseries charts ---
+
+function drawChart(canvasId, buckets, series) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  if (buckets.length < 2) {
+    ctx.fillStyle = '#21262d';
+    ctx.font = '11px monospace';
+    ctx.fillText('waiting for data...', W/2 - 50, H/2);
+    return;
+  }
+
+  // Find max value across all series
+  let maxVal = 1;
+  for (const s of series) {
+    for (const b of buckets) {
+      if (b[s.key] > maxVal) maxVal = b[s.key];
+    }
+  }
+  maxVal = Math.ceil(maxVal * 1.2);
+
+  const pad = { l: 30, r: 10, t: 5, b: 20 };
+  const cw = W - pad.l - pad.r;
+  const ch = H - pad.t - pad.b;
+
+  // Grid lines
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.t + (ch / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(W - pad.r, y);
+    ctx.stroke();
+  }
+
+  // Y-axis labels
+  ctx.fillStyle = '#484f58';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const val = Math.round(maxVal * (4 - i) / 4);
+    const y = pad.t + (ch / 4) * i + 3;
+    ctx.fillText(val, pad.l - 4, y);
+  }
+
+  // X-axis time labels
+  ctx.textAlign = 'center';
+  const now = Math.floor(Date.now() / 1000);
+  for (let i = 0; i < buckets.length; i += Math.max(1, Math.floor(buckets.length / 6))) {
+    const x = pad.l + (i / (buckets.length - 1)) * cw;
+    const ago = now - buckets[i].t;
+    const label = ago < 60 ? ago + 's' : Math.floor(ago/60) + 'm';
+    ctx.fillText('-' + label, x, H - 4);
+  }
+
+  // Draw each series
+  for (const s of series) {
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    // Fill area
+    ctx.fillStyle = s.color + '18';
+    ctx.moveTo(pad.l, pad.t + ch);
+    for (let i = 0; i < buckets.length; i++) {
+      const x = pad.l + (i / (buckets.length - 1)) * cw;
+      const y = pad.t + ch - (buckets[i][s.key] / maxVal) * ch;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(pad.l + cw, pad.t + ch);
+    ctx.closePath();
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    for (let i = 0; i < buckets.length; i++) {
+      const x = pad.l + (i / (buckets.length - 1)) * cw;
+      const y = pad.t + ch - (buckets[i][s.key] / maxVal) * ch;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
+function renderCharts(buckets) {
+  drawChart('chart-throughput', buckets, [
+    { key: 'ok', color: '#3fb950' },
+  ]);
+  drawChart('chart-errors', buckets, [
+    { key: 'errors', color: '#f85149' },
+    { key: 'cf', color: '#39d2c0' },
+  ]);
+}
+
 async function refresh() {
   try {
-    const [pool, agents, metrics] = await Promise.all([
+    const [pool, agents, metrics, timeseries] = await Promise.all([
       fetchJSON('/pool/status'),
-      fetchJSON('/pool/agents'),
+      fetchJSON('/dashboard/agents'),
       fetchText('/metrics'),
+      fetchJSON('/dashboard/timeseries'),
     ]);
     renderStats(pool, agents);
     renderAgents(agents, pool);
     renderMetrics(metrics);
+    renderCharts(timeseries);
     document.getElementById('tick').textContent = new Date().toLocaleTimeString();
   } catch (e) {
     document.getElementById('tick').textContent = 'error: ' + e.message;
@@ -228,6 +349,11 @@ setInterval(refresh, 2000);
 </script>
 </body>
 </html>`
+
+func (s *Server) handleTimeseries(w http.ResponseWriter, r *http.Request) {
+	buckets := s.events.Buckets(5 * time.Second)
+	writeJSON(w, http.StatusOK, buckets)
+}
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
