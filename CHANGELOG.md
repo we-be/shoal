@@ -1,3 +1,37 @@
+## v0.2.0 — Slack Tide (2026-03-29)
+
+Reliability and observability release. The shoal now heals itself.
+
+### Controller
+- **Health checks** — background loop polls agent `/health` every 15s, removes dead fish after 3 missed checks
+- **Lease TTLs** — auto-expires abandoned leases after 5m idle (configurable `--lease-ttl`)
+- **Pool persistence** — snapshots pool state to JSON every 30s, restores on restart. Fish identities (cookies, domains, CF clearance) survive controller restarts
+- **Agent reconnection** — agents re-registering from the same address re-attach their old identity. No cookie/warmth loss on agent restart
+- **Graceful shutdown** — SIGINT/SIGTERM saves final snapshot before exit
+- **CF auto-renewal** — background renewer scans for expiring `cf_clearance` cookies and proactively re-solves via the grouper before they lapse
+- **`POST /renew`** — manual endpoint to force CF clearance renewal for a domain
+- **CFURL tracking** — domain state remembers which URL earned the clearance for accurate renewal
+- **Cookie handoff retry** — propagation retries 3x with backoff for minnows that aren't ready
+- **Lazy cookie catch-up** — on lease, controller checks if minnow has cookies for the domain and copies from a warm agent if not. Eliminates the 1/N silent failure rate
+- **Configurable** — `--health-interval`, `--lease-ttl`, `--max-missed-checks`, `--store` flags
+
+### Metrics
+- `shoal_lease_expired_total` — leases auto-expired by TTL
+- `shoal_agent_removed_total` — agents removed for failed health checks
+- `shoal_agent_reconnections_total` — agent identity re-attachments
+- `shoal_cf_renewals_total` — successful proactive CF renewals
+- `shoal_cf_renewals_failed_total` — failed renewal attempts
+
+### Testing
+- **Stress test suite** — burst load (50 req, 50/50 OK), sustained throughput (16 req/s, 0 errors over 30s), agent reconnection, pool persistence, metrics integrity
+- **CF renewal test** — forced renewal via `POST /renew`, verified re-solve + cookie handoff
+
+### Bug Fixes
+- Fixed cookie propagation race where exactly 1/N minnows never received CF cookies (#2)
+- Fixed CF renewal navigating to wrong URL (bare domain vs www subdomain)
+
+---
+
 ## v0.1.0 — The First Tide (2026-03-29)
 
 Initial release. Built from scratch in a single session.
