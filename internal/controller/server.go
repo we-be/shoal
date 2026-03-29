@@ -132,6 +132,13 @@ func (s *Server) handleLease(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("lease granted: %s -> %s (consumer=%s, domain=%s)", lease.ID, lease.AgentID, req.Consumer, req.Domain)
 
+	// Lazy catch-up: if a minnow is leased for a domain it has no cookies for,
+	// copy them from a warm agent. Fixes the race where a minnow misses the
+	// initial handoff because it wasn't ready when the grouper solved CF.
+	if agent, err := s.pool.GetAgent(lease.ID); err == nil {
+		go s.ensureMinnowCookies(agent, req.Domain)
+	}
+
 	writeJSON(w, http.StatusOK, api.LeaseResponse{
 		LeaseID: lease.ID,
 		AgentID: lease.AgentID,
@@ -302,8 +309,7 @@ func (s *Server) forwardToAgent(agent *ManagedAgent, req api.NavigateRequest) (*
 }
 
 // propagateCookiesToMinnows pushes cookies from a grouper to all light agents.
-// This is the handoff — the grouper earned cf_clearance, now the minnows
-// can make fast requests with it.
+// Retries failed handoffs to handle minnows that haven't finished starting.
 func (s *Server) propagateCookiesToMinnows(navURL string, cookies []api.Cookie) {
 	minnows := s.pool.LightAgents()
 	if len(minnows) == 0 {
@@ -322,17 +328,74 @@ func (s *Server) propagateCookiesToMinnows(navURL string, cookies []api.Cookie) 
 
 	for _, m := range minnows {
 		go func(addr string, id string) {
-			url := fmt.Sprintf("http://%s/cookies/set", addr)
-			resp, err := s.client.Post(url, "application/json", bytes.NewReader(body))
-			if err != nil {
-				log.Printf("cookie handoff to %s failed: %v", id, err)
+			// Retry up to 3 times with backoff
+			for attempt := range 3 {
+				url := fmt.Sprintf("http://%s/cookies/set", addr)
+				resp, err := s.client.Post(url, "application/json", bytes.NewReader(body))
+				if err != nil {
+					log.Printf("cookie handoff to %s attempt %d failed: %v", id, attempt+1, err)
+					time.Sleep(time.Duration(attempt+1) * time.Second)
+					continue
+				}
+				resp.Body.Close()
+				cfHandoffsTotal.Inc()
+				log.Printf("cookie handoff to %s: %d cookies for %s", id, len(cookies), navURL)
 				return
 			}
-			resp.Body.Close()
-			cfHandoffsTotal.Inc()
-			log.Printf("cookie handoff to %s: %d cookies for %s", id, len(cookies), navURL)
+			log.Printf("cookie handoff to %s FAILED after 3 attempts", id)
 		}(m.Address, m.Identity.ID)
 	}
+}
+
+// ensureMinnowCookies checks if a minnow being leased has cookies for
+// the requested domain. If not, copies them from a warm agent (grouper
+// or another minnow that has them). This is the lazy catch-up for
+// minnows that missed the initial handoff.
+func (s *Server) ensureMinnowCookies(agent *ManagedAgent, domain string) {
+	if agent.Class != api.ClassLight {
+		return
+	}
+
+	// Check if this minnow already has cookies for the domain
+	if state, ok := agent.Identity.Domains[domain]; ok && len(state.Cookies) > 0 {
+		return
+	}
+
+	// Find a warm agent that has cookies for this domain
+	s.pool.mu.RLock()
+	var sourceCookies []api.Cookie
+	var sourceURL string
+	for _, other := range s.pool.agents {
+		if state, ok := other.Identity.Domains[domain]; ok && len(state.Cookies) > 0 {
+			sourceCookies = make([]api.Cookie, len(state.Cookies))
+			copy(sourceCookies, state.Cookies)
+			sourceURL = state.CFURL
+			if sourceURL == "" {
+				sourceURL = "https://www." + domain + "/"
+			}
+			break
+		}
+	}
+	s.pool.mu.RUnlock()
+
+	if len(sourceCookies) == 0 {
+		return
+	}
+
+	// Push cookies to the minnow
+	setCookiesReq := api.SetCookiesRequest{
+		URL:     sourceURL,
+		Cookies: sourceCookies,
+	}
+	body, _ := json.Marshal(setCookiesReq)
+	url := fmt.Sprintf("http://%s/cookies/set", agent.Address)
+	resp, err := s.client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("lazy cookie push to %s failed: %v", agent.Identity.ID, err)
+		return
+	}
+	resp.Body.Close()
+	log.Printf("lazy cookie push to %s: %d cookies for %s", agent.Identity.ID, len(sourceCookies), domain)
 }
 
 // hasCFClearance checks if a cookie set contains cf_clearance.
