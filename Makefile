@@ -4,15 +4,18 @@ CONTROLLER_PORT := 8180
 AGENT_PORTS := 8181 8182 8183
 LP_PORTS := 9222 9223 9224
 LP_BIN := $(shell which lightpanda)
+TESTSITE_PORT := 9090
 
 build:
 	@mkdir -p bin
 	go build -o bin/controller ./cmd/controller
 	go build -o bin/agent ./cmd/agent
-	@echo "built bin/controller + bin/agent"
+	go build -o bin/testsite ./examples/testsite
+	@echo "built controller + agent + testsite"
 
 run: build stop
 	@echo "launching shoal cluster..."
+	@bin/testsite -addr :$(TESTSITE_PORT) > /dev/null 2>&1 & echo "  testsite on :$(TESTSITE_PORT) (pid $$!)"
 	@bin/controller -addr :$(CONTROLLER_PORT) > /dev/null 2>&1 & echo "  controller on :$(CONTROLLER_PORT) (pid $$!)"
 	@sleep 0.3
 	@for i in 0 1 2; do \
@@ -34,7 +37,7 @@ run: build stop
 	@echo "shoal is running. make stop to tear down."
 
 stop:
-	@fuser -k 8180/tcp 8181/tcp 8182/tcp 8183/tcp 9222/tcp 9223/tcp 9224/tcp 2>/dev/null || true
+	@fuser -k 8180/tcp 8181/tcp 8182/tcp 8183/tcp 9090/tcp 9222/tcp 9223/tcp 9224/tcp 2>/dev/null || true
 	@sleep 0.3
 	@echo "stopped"
 

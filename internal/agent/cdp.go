@@ -114,13 +114,27 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 	navCtx, navCancel := context.WithTimeout(b.tabCtx, timeout)
 	defer navCancel()
 
+	// Navigate to the URL
+	if err := chromedp.Run(navCtx,
+		chromedp.Navigate(req.URL),
+		chromedp.WaitReady("body", chromedp.ByQuery),
+	); err != nil {
+		return nil, fmt.Errorf("navigating to %s: %w", req.URL, err)
+	}
+
+	// Execute post-navigation actions (fill forms, click buttons, etc.)
+	for _, action := range req.Actions {
+		if err := executeAction(navCtx, action); err != nil {
+			return nil, fmt.Errorf("action %s on %s: %w", action.Type, action.Selector, err)
+		}
+	}
+
+	// Collect results after navigation + actions
 	var html string
 	var currentURL string
 	var cookies []*network.Cookie
 
-	err := chromedp.Run(navCtx,
-		chromedp.Navigate(req.URL),
-		chromedp.WaitReady("body", chromedp.ByQuery),
+	if err := chromedp.Run(navCtx,
 		chromedp.OuterHTML("html", &html, chromedp.ByQuery),
 		chromedp.Location(&currentURL),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -128,9 +142,8 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 			cookies, err = network.GetCookies().Do(ctx)
 			return err
 		}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("navigating to %s: %w", req.URL, err)
+	); err != nil {
+		return nil, fmt.Errorf("collecting results: %w", err)
 	}
 
 	apiCookies := make([]api.Cookie, len(cookies))
@@ -152,6 +165,53 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		HTML:    html,
 		Cookies: apiCookies,
 	}, nil
+}
+
+// executeAction runs a single browser automation step via JS evaluation.
+// Uses Runtime.evaluate for broad CDP compatibility (works with Lightpanda,
+// Chrome, and anything else that speaks the protocol).
+func executeAction(ctx context.Context, action api.Action) error {
+	switch action.Type {
+	case "fill":
+		js := fmt.Sprintf(
+			`document.querySelector(%q).value = %q`,
+			action.Selector, action.Value,
+		)
+		return chromedp.Run(ctx, chromedp.Evaluate(js, nil))
+
+	case "click":
+		js := fmt.Sprintf(`document.querySelector(%q).click()`, action.Selector)
+		err := chromedp.Run(ctx, chromedp.Evaluate(js, nil))
+		if err != nil {
+			return err
+		}
+		// Wait for any navigation triggered by the click
+		return chromedp.Run(ctx, chromedp.WaitReady("body", chromedp.ByQuery))
+
+	case "submit":
+		js := fmt.Sprintf(`document.querySelector(%q).submit()`, action.Selector)
+		err := chromedp.Run(ctx, chromedp.Evaluate(js, nil))
+		if err != nil {
+			return err
+		}
+		return chromedp.Run(ctx, chromedp.WaitReady("body", chromedp.ByQuery))
+
+	case "wait":
+		if action.WaitMS > 0 {
+			return chromedp.Run(ctx, chromedp.Sleep(time.Duration(action.WaitMS)*time.Millisecond))
+		}
+		js := fmt.Sprintf(
+			`new Promise(r => { const check = () => document.querySelector(%q) ? r() : setTimeout(check, 100); check(); })`,
+			action.Selector,
+		)
+		return chromedp.Run(ctx, chromedp.Evaluate(js, nil))
+
+	case "eval":
+		return chromedp.Run(ctx, chromedp.Evaluate(action.Value, nil))
+
+	default:
+		return fmt.Errorf("unknown action type: %s", action.Type)
+	}
 }
 
 func (b *CDPBackend) Health() api.HealthStatus {

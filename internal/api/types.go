@@ -39,8 +39,17 @@ type ReleaseResponse struct {
 // --- Navigate (controller -> agent) ---
 
 type NavigateRequest struct {
-	URL        string `json:"url"`
-	MaxTimeout int    `json:"max_timeout,omitempty"` // milliseconds
+	URL        string   `json:"url"`
+	MaxTimeout int      `json:"max_timeout,omitempty"` // milliseconds
+	Actions    []Action `json:"actions,omitempty"`      // post-navigation actions
+}
+
+// Action is a browser automation step — fill a form, click a button, wait.
+type Action struct {
+	Type     string `json:"type"`               // "fill", "click", "wait"
+	Selector string `json:"selector"`           // CSS selector
+	Value    string `json:"value,omitempty"`     // for "fill"
+	WaitMS   int    `json:"wait_ms,omitempty"`  // for "wait"
 }
 
 type NavigateResponse struct {
@@ -65,9 +74,10 @@ type Cookie struct {
 // --- Request (client -> controller, routed to agent) ---
 
 type RequestPayload struct {
-	LeaseID    string `json:"lease_id"`
-	URL        string `json:"url"`
-	MaxTimeout int    `json:"max_timeout,omitempty"`
+	LeaseID    string   `json:"lease_id"`
+	URL        string   `json:"url"`
+	MaxTimeout int      `json:"max_timeout,omitempty"`
+	Actions    []Action `json:"actions,omitempty"`
 }
 
 // --- Pool Status ---

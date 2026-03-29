@@ -114,6 +114,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	navReq := api.NavigateRequest{
 		URL:        req.URL,
 		MaxTimeout: req.MaxTimeout,
+		Actions:    req.Actions,
 	}
 	resp, err := s.forwardToAgent(agent, navReq)
 	if err != nil {
