@@ -1,12 +1,15 @@
 // Package api defines the shared types between controller and agent.
 package api
 
+import "time"
+
 // --- Agent Registration ---
 
 // RegisterRequest is sent by an agent to the controller on startup.
 type RegisterRequest struct {
 	Address string `json:"address"` // host:port the agent is listening on
 	Backend string `json:"backend"` // backend type: "stub", "lightpanda", "chrome", etc.
+	IP      string `json:"ip,omitempty"` // external IP of the agent
 }
 
 type RegisterResponse struct {
@@ -50,12 +53,13 @@ type NavigateResponse struct {
 }
 
 type Cookie struct {
-	Name     string `json:"name"`
-	Value    string `json:"value"`
-	Domain   string `json:"domain,omitempty"`
-	Path     string `json:"path,omitempty"`
-	Secure   bool   `json:"secure,omitempty"`
-	HTTPOnly bool   `json:"http_only,omitempty"`
+	Name     string  `json:"name"`
+	Value    string  `json:"value"`
+	Domain   string  `json:"domain,omitempty"`
+	Path     string  `json:"path,omitempty"`
+	Secure   bool    `json:"secure,omitempty"`
+	HTTPOnly bool    `json:"http_only,omitempty"`
+	Expires  float64 `json:"expires,omitempty"` // seconds since epoch, -1 for session
 }
 
 // --- Request (client -> controller, routed to agent) ---
@@ -72,6 +76,32 @@ type PoolStatus struct {
 	Total     int `json:"total"`
 	Available int `json:"available"`
 	Leased    int `json:"leased"`
+}
+
+// --- Browser Identity ---
+// Each fish in the shoal has a persistent identity — its accumulated
+// cookies, sessions, and fingerprint history. This is what makes a warm
+// browser valuable: it's already swum through these waters.
+
+type BrowserIdentity struct {
+	ID        string                  `json:"id"`         // e.g. "redfish-a3b2"
+	IP        string                  `json:"ip,omitempty"`
+	Backend   string                  `json:"backend"`
+	CreatedAt time.Time               `json:"created_at"`
+	LastUsed  time.Time               `json:"last_used"`
+	UseCount  int                     `json:"use_count"`
+	Domains   map[string]*DomainState `json:"domains"`
+}
+
+// DomainState tracks what a browser has accumulated on a specific domain —
+// the dirt and oil on its hands.
+type DomainState struct {
+	LastVisited    time.Time         `json:"last_visited"`
+	VisitCount     int               `json:"visit_count"`
+	Cookies        []Cookie          `json:"cookies"`
+	HasCFClearance bool              `json:"has_cf_clearance"`
+	CFExpiry       *time.Time        `json:"cf_expiry,omitempty"`
+	Tokens         map[string]string `json:"tokens,omitempty"` // named login sessions
 }
 
 // --- Health ---

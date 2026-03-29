@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/we-be/shoal/internal/api"
@@ -44,9 +46,12 @@ func (a *Agent) registerLoop() {
 	// Give the server a moment to start
 	time.Sleep(100 * time.Millisecond)
 
+	ip := detectIP()
+
 	req := api.RegisterRequest{
 		Address: a.listenAddr,
 		Backend: a.backend.Health().Backend,
+		IP:      ip,
 	}
 
 	body, _ := json.Marshal(req)
@@ -73,9 +78,38 @@ func (a *Agent) registerLoop() {
 		resp.Body.Close()
 
 		a.agentID = regResp.AgentID
-		log.Printf("registered with controller as %s", a.agentID)
+		log.Printf("registered with controller as %s (ip=%s)", a.agentID, ip)
 		return
 	}
+}
+
+// detectIP discovers the agent's external IP address.
+func detectIP() string {
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// Try a few IP echo services
+	for _, url := range []string{
+		"https://api.ipify.org",
+		"https://ifconfig.me/ip",
+		"https://icanhazip.com",
+	} {
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		ip := strings.TrimSpace(string(body))
+		if ip != "" {
+			return ip
+		}
+	}
+
+	log.Printf("could not detect external IP")
+	return ""
 }
 
 func (a *Agent) Close() error {

@@ -125,6 +125,7 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 			Path:     c.Path,
 			Secure:   c.Secure,
 			HTTPOnly: c.HTTPOnly,
+			Expires:  float64(c.Expires),
 		}
 	}
 

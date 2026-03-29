@@ -38,8 +38,9 @@ func NewServer() *Server {
 	s.mux.HandleFunc("POST /request", s.handleRequest)
 	s.mux.HandleFunc("POST /release", s.handleRelease)
 
-	// Status
+	// Status & identity
 	s.mux.HandleFunc("GET /pool/status", s.handlePoolStatus)
+	s.mux.HandleFunc("GET /pool/agents", s.handlePoolAgents)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
 	return s
@@ -59,7 +60,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := s.pool.Register(req)
-	log.Printf("agent registered: %s (%s @ %s)", id, req.Backend, req.Address)
+	log.Printf("agent registered: %s (%s @ %s, ip=%s)", id, req.Backend, req.Address, req.IP)
 
 	writeJSON(w, http.StatusOK, api.RegisterResponse{AgentID: id})
 }
@@ -116,10 +117,13 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := s.forwardToAgent(agent, navReq)
 	if err != nil {
-		log.Printf("agent %s error: %v", agent.ID, err)
+		log.Printf("agent %s error: %v", agent.Identity.ID, err)
 		writeJSON(w, http.StatusBadGateway, api.ErrorResponse{Error: "agent_error", Detail: err.Error()})
 		return
 	}
+
+	// Record what this fish learned — cookies, CF clearance, domain state
+	s.pool.RecordNavigation(req.LeaseID, req.URL, resp.Cookies)
 
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -140,10 +144,14 @@ func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.ReleaseResponse{Status: "ok"})
 }
 
-// --- Status ---
+// --- Status & Identity ---
 
 func (s *Server) handlePoolStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.pool.Status())
+}
+
+func (s *Server) handlePoolAgents(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.pool.Agents())
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +181,7 @@ func (s *Server) forwardToAgent(agent *ManagedAgent, req api.NavigateRequest) (*
 	url := fmt.Sprintf("http://%s/navigate", agent.Address)
 	resp, err := s.client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("contacting agent %s: %w", agent.ID, err)
+		return nil, fmt.Errorf("contacting agent %s: %w", agent.Identity.ID, err)
 	}
 	defer resp.Body.Close()
 

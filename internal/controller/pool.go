@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"crypto/rand"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/we-be/shoal/internal/api"
@@ -9,26 +11,25 @@ import (
 
 // ManagedAgent tracks an agent in the pool.
 type ManagedAgent struct {
-	ID      string `json:"id"`
-	Address string `json:"address"` // host:port
-	Backend string `json:"backend"` // "stub", "lightpanda", "chrome", etc.
-	State   string `json:"state"`   // "available", "leased"
+	Address  string              `json:"address"`
+	Backend  string              `json:"backend"`
+	State    string              `json:"state"` // "available", "leased"
+	Identity *api.BrowserIdentity `json:"identity"`
 }
 
 // Lease tracks an active lease binding a client to an agent.
 type Lease struct {
 	ID       string `json:"id"`
-	AgentID  string `json:"agent_id"`
+	AgentID  string `json:"agent_id"` // the fish ID
 	Consumer string `json:"consumer"`
 	Domain   string `json:"domain"`
 }
 
-// Pool manages the school of agents — tracks registration, leases, and routing.
+// Pool manages the school — tracks registration, identities, leases, and routing.
 type Pool struct {
 	mu     sync.RWMutex
-	agents map[string]*ManagedAgent // agent_id -> agent
+	agents map[string]*ManagedAgent // fish_id -> agent
 	leases map[string]*Lease        // lease_id -> lease
-	nextID int
 }
 
 func NewPool() *Pool {
@@ -38,51 +39,64 @@ func NewPool() *Pool {
 	}
 }
 
-// Register adds a new agent to the pool.
+// Register adds a new agent to the pool and gives it a fish identity.
 func (p *Pool) Register(req api.RegisterRequest) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.nextID++
-	id := fmt.Sprintf("agent-%d", p.nextID)
+	identity := newIdentity(req.Backend, req.IP)
 
-	p.agents[id] = &ManagedAgent{
-		ID:      id,
-		Address: req.Address,
-		Backend: req.Backend,
-		State:   "available",
+	p.agents[identity.ID] = &ManagedAgent{
+		Address:  req.Address,
+		Backend:  req.Backend,
+		State:    "available",
+		Identity: identity,
 	}
 
-	return id
+	return identity.ID
 }
 
-// Acquire finds an available agent and creates a lease.
+// Acquire finds the best available agent for the requested domain.
+// Preference order: warm (has CF clearance) > tepid (has cookies) > cold.
 func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Find an available agent
-	var target *ManagedAgent
-	for _, a := range p.agents {
-		if a.State == "available" {
-			target = a
-			break
+	var bestAgent *ManagedAgent
+	var bestID string
+	bestWarmth := -1
+
+	for id, a := range p.agents {
+		if a.State != "available" {
+			continue
+		}
+
+		warmth := domainWarmth(a.Identity, req.Domain)
+		if warmth > bestWarmth {
+			bestWarmth = warmth
+			bestAgent = a
+			bestID = id
 		}
 	}
-	if target == nil {
+
+	if bestAgent == nil {
 		return nil, fmt.Errorf("pool_exhausted")
 	}
 
-	target.State = "leased"
+	bestAgent.State = "leased"
 
-	leaseID := fmt.Sprintf("lease-%d", len(p.leases)+1)
+	leaseID := newLeaseID()
 	lease := &Lease{
 		ID:       leaseID,
-		AgentID:  target.ID,
+		AgentID:  bestID,
 		Consumer: req.Consumer,
 		Domain:   req.Domain,
 	}
 	p.leases[leaseID] = lease
+
+	if bestWarmth > 0 {
+		log.Printf("warm match: %s has warmth %d for %s", bestID, bestWarmth, req.Domain)
+	}
 
 	return lease, nil
 }
@@ -106,7 +120,7 @@ func (p *Pool) Release(leaseID string) error {
 	return nil
 }
 
-// GetAgent returns the agent address for a given lease.
+// GetAgent returns the managed agent for a given lease.
 func (p *Pool) GetAgent(leaseID string) (*ManagedAgent, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -122,6 +136,24 @@ func (p *Pool) GetAgent(leaseID string) (*ManagedAgent, error) {
 	}
 
 	return agent, nil
+}
+
+// RecordNavigation updates an agent's identity after a navigation.
+func (p *Pool) RecordNavigation(leaseID string, navURL string, cookies []api.Cookie) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	lease, ok := p.leases[leaseID]
+	if !ok {
+		return
+	}
+
+	agent, ok := p.agents[lease.AgentID]
+	if !ok {
+		return
+	}
+
+	updateIdentity(agent.Identity, navURL, cookies)
 }
 
 // Status returns current pool counts.
@@ -145,4 +177,22 @@ func (p *Pool) Status() api.PoolStatus {
 		Available: available,
 		Leased:    leased,
 	}
+}
+
+// Agents returns all browser identities in the pool.
+func (p *Pool) Agents() []api.BrowserIdentity {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	out := make([]api.BrowserIdentity, 0, len(p.agents))
+	for _, a := range p.agents {
+		out = append(out, *a.Identity)
+	}
+	return out
+}
+
+func newLeaseID() string {
+	b := make([]byte, 4)
+	rand.Read(b)
+	return fmt.Sprintf("lease-%x", b)
 }
