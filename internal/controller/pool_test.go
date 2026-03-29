@@ -1,7 +1,11 @@
 package controller
 
 import (
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/we-be/shoal/internal/api"
 )
@@ -210,5 +214,86 @@ func TestGetAgentNotFound(t *testing.T) {
 	_, err := pool.GetAgent("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent lease")
+	}
+}
+
+func TestConcurrentAcquireRelease(t *testing.T) {
+	pool := NewPool()
+
+	for i := range 10 {
+		pool.Register(api.RegisterRequest{
+			Address: fmt.Sprintf(":%d", 8180+i),
+			Backend: api.BackendStub,
+		})
+	}
+
+	var wg sync.WaitGroup
+	var releaseErrors atomic.Int32
+
+	for range 100 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			lease, err := pool.Acquire(api.LeaseRequest{Consumer: "stress", Domain: "test.com"})
+			if err != nil {
+				return // pool exhaustion expected
+			}
+			time.Sleep(time.Millisecond)
+			if err := pool.Release(lease.ID); err != nil {
+				releaseErrors.Add(1)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if n := releaseErrors.Load(); n != 0 {
+		t.Fatalf("got %d release errors", n)
+	}
+
+	status := pool.Status()
+	if status.Leased != 0 {
+		t.Fatalf("expected 0 leased after stress test, got %d", status.Leased)
+	}
+}
+
+func TestConcurrentRegister(t *testing.T) {
+	pool := NewPool()
+
+	// Concurrent registration shouldn't panic or corrupt state
+	done := make(chan struct{})
+	for i := range 50 {
+		go func(i int) {
+			pool.Register(api.RegisterRequest{
+				Address: fmt.Sprintf(":%d", 9000+i),
+				Backend: api.BackendStub,
+			})
+			done <- struct{}{}
+		}(i)
+	}
+
+	for range 50 {
+		<-done
+	}
+
+	if pool.Status().Total != 50 {
+		t.Fatalf("expected 50 agents, got %d", pool.Status().Total)
+	}
+}
+
+func TestLightAgents(t *testing.T) {
+	pool := NewPool()
+	pool.Register(api.RegisterRequest{Address: ":8181", Backend: api.BackendChrome})
+	pool.Register(api.RegisterRequest{Address: ":8182", Backend: api.BackendTLSClient})
+	pool.Register(api.RegisterRequest{Address: ":8183", Backend: api.BackendTLSClient})
+
+	light := pool.LightAgents()
+	if len(light) != 2 {
+		t.Fatalf("expected 2 light agents, got %d", len(light))
+	}
+	for _, a := range light {
+		if a.Class != api.ClassLight {
+			t.Fatalf("expected light class, got %s", a.Class)
+		}
 	}
 }
