@@ -49,9 +49,11 @@ type ReleaseResponse struct {
 // --- Navigate (controller -> agent) ---
 
 type NavigateRequest struct {
-	URL        string   `json:"url"`
-	MaxTimeout int      `json:"max_timeout,omitempty"` // milliseconds
-	Actions    []Action `json:"actions,omitempty"`      // post-navigation actions
+	URL              string   `json:"url"`
+	MaxTimeout       int      `json:"max_timeout,omitempty"`       // milliseconds
+	Actions          []Action `json:"actions,omitempty"`           // post-navigation actions
+	CaptureXHR       bool     `json:"capture_xhr,omitempty"`      // capture XHR/fetch responses
+	CaptureXHRFilter string   `json:"capture_xhr_filter,omitempty"` // URL substring filter
 }
 
 // Action is a browser automation step — fill a form, click a button, wait.
@@ -63,12 +65,21 @@ type Action struct {
 }
 
 type NavigateResponse struct {
-	URL       string            `json:"url"`
-	Status    int               `json:"status"`
-	HTML      string            `json:"html"`
-	Cookies   []Cookie          `json:"cookies,omitempty"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	UserAgent string            `json:"user_agent,omitempty"`
+	URL          string            `json:"url"`
+	Status       int               `json:"status"`
+	HTML         string            `json:"html"`
+	Cookies      []Cookie          `json:"cookies,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	UserAgent    string            `json:"user_agent,omitempty"`
+	XHRResponses []XHRResponse     `json:"xhr_responses,omitempty"`
+}
+
+// XHRResponse is a captured XHR/fetch response from the browser.
+type XHRResponse struct {
+	URL     string            `json:"url"`
+	Status  int               `json:"status"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    string            `json:"body"`
 }
 
 type Cookie struct {
@@ -91,10 +102,12 @@ type SetCookiesRequest struct {
 // --- Request (client -> controller, routed to agent) ---
 
 type RequestPayload struct {
-	LeaseID    string   `json:"lease_id"`
-	URL        string   `json:"url"`
-	MaxTimeout int      `json:"max_timeout,omitempty"`
-	Actions    []Action `json:"actions,omitempty"`
+	LeaseID          string   `json:"lease_id"`
+	URL              string   `json:"url"`
+	MaxTimeout       int      `json:"max_timeout,omitempty"`
+	Actions          []Action `json:"actions,omitempty"`
+	CaptureXHR       bool     `json:"capture_xhr,omitempty"`
+	CaptureXHRFilter string   `json:"capture_xhr_filter,omitempty"`
 }
 
 // --- Pool Status ---

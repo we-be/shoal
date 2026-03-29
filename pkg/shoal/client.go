@@ -56,6 +56,9 @@ type Action = api.Action
 // Cookie is a browser cookie.
 type Cookie = api.Cookie
 
+// XHRResponse is a captured XHR/fetch response.
+type XHRResponse = api.XHRResponse
+
 // PoolStatus is the pool's current state.
 type PoolStatus = api.PoolStatus
 

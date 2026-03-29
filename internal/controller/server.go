@@ -169,9 +169,11 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	timer := prometheus.NewTimer(requestDuration.WithLabelValues(domain, agent.Class))
 
 	navReq := api.NavigateRequest{
-		URL:        req.URL,
-		MaxTimeout: req.MaxTimeout,
-		Actions:    req.Actions,
+		URL:              req.URL,
+		MaxTimeout:       req.MaxTimeout,
+		Actions:          req.Actions,
+		CaptureXHR:       req.CaptureXHR,
+		CaptureXHRFilter: req.CaptureXHRFilter,
 	}
 	resp, err := s.forwardToAgent(r.Context(), agent, navReq)
 	timer.ObserveDuration()

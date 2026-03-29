@@ -157,6 +157,13 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 	navCtx, navCancel := context.WithTimeout(b.tabCtx, timeout)
 	defer navCancel()
 
+	// Set up XHR capture if requested
+	var xhrCollector *xhrCollector
+	if req.CaptureXHR {
+		xhrCollector = newXHRCollector(req.CaptureXHRFilter)
+		xhrCollector.start(navCtx)
+	}
+
 	// Navigate to the URL (skip if empty — allows stateful multi-step flows)
 	if req.URL != "" {
 		if err := chromedp.Run(navCtx,
@@ -198,6 +205,12 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		return nil, fmt.Errorf("collecting results: %w", err)
 	}
 
+	// Collect captured XHR responses
+	var xhrResponses []api.XHRResponse
+	if xhrCollector != nil {
+		xhrResponses = xhrCollector.collect(navCtx)
+	}
+
 	// Clean up any extra tabs Chrome may have opened (popups, redirects)
 	b.cleanupExtraTabs()
 
@@ -215,10 +228,11 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 	}
 
 	return &api.NavigateResponse{
-		URL:     currentURL,
-		Status:  200,
-		HTML:    html,
-		Cookies: apiCookies,
+		URL:          currentURL,
+		Status:       200,
+		HTML:         html,
+		Cookies:      apiCookies,
+		XHRResponses: xhrResponses,
 	}, nil
 }
 

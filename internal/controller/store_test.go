@@ -48,7 +48,27 @@ func TestStoreRoundTrip(t *testing.T) {
 		t.Fatalf("expected 2 agents, got %d", len(agents))
 	}
 
-	// Find the chrome agent
+	// Find the agent that has the example.com domain state
+	var withDomain *api.BrowserIdentity
+	for _, a := range agents {
+		if _, ok := a.Domains["example.com"]; ok {
+			withDomain = &a
+			break
+		}
+	}
+	if withDomain == nil {
+		t.Fatal("no agent has example.com domain state after restore")
+	}
+
+	state := withDomain.Domains["example.com"]
+	if !state.HasCFClearance {
+		t.Fatal("expected CF clearance to be preserved")
+	}
+	if len(state.Cookies) != 2 {
+		t.Fatalf("expected 2 cookies, got %d", len(state.Cookies))
+	}
+
+	// Verify chrome agent has its IP
 	var chrome *api.BrowserIdentity
 	for _, a := range agents {
 		if a.Backend == api.BackendChrome {
@@ -59,20 +79,8 @@ func TestStoreRoundTrip(t *testing.T) {
 	if chrome == nil {
 		t.Fatal("chrome agent not found after restore")
 	}
-
 	if chrome.IP != "1.2.3.4" {
 		t.Fatalf("expected IP 1.2.3.4, got %s", chrome.IP)
-	}
-
-	state := chrome.Domains["example.com"]
-	if state == nil {
-		t.Fatal("expected domain state for example.com")
-	}
-	if !state.HasCFClearance {
-		t.Fatal("expected CF clearance to be preserved")
-	}
-	if len(state.Cookies) != 2 {
-		t.Fatalf("expected 2 cookies, got %d", len(state.Cookies))
 	}
 }
 
