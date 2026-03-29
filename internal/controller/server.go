@@ -22,6 +22,7 @@ type Server struct {
 	health   *HealthChecker
 	store    *Store
 	renewer  *CFRenewer
+	proxies  ProxyProvider
 	mux      *http.ServeMux
 	client   *http.Client
 	started  time.Time
@@ -85,6 +86,12 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 	return s
 }
 
+// SetProxyProvider configures the proxy pool. Agents that register will
+// be assigned proxies from this provider.
+func (s *Server) SetProxyProvider(p ProxyProvider) {
+	s.proxies = p
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
@@ -107,9 +114,23 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := s.pool.Register(req)
-	log.Printf("agent registered: %s (%s @ %s, ip=%s)", id, req.Backend, req.Address, req.IP)
 
-	writeJSON(w, http.StatusOK, api.RegisterResponse{AgentID: id})
+	// Assign a proxy from the pool if available
+	var proxy *api.ProxyConfig
+	if s.proxies != nil {
+		p, err := s.proxies.GetProxy()
+		if err != nil {
+			log.Printf("proxy assignment for %s failed: %v", id, err)
+		} else {
+			proxy = p
+			log.Printf("agent registered: %s (%s @ %s, ip=%s, proxy=%s)", id, req.Backend, req.Address, req.IP, p.URL)
+		}
+	}
+	if proxy == nil {
+		log.Printf("agent registered: %s (%s @ %s, ip=%s)", id, req.Backend, req.Address, req.IP)
+	}
+
+	writeJSON(w, http.StatusOK, api.RegisterResponse{AgentID: id, Proxy: proxy})
 }
 
 // --- Lease API ---

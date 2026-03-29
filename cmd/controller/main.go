@@ -19,6 +19,8 @@ func main() {
 	healthInterval := flag.Duration("health-interval", 15*time.Second, "health check interval")
 	leaseTTL := flag.Duration("lease-ttl", 5*time.Minute, "max lease duration before auto-expire")
 	maxMissed := flag.Int("max-missed-checks", 3, "remove agent after N consecutive failed health checks")
+	proxyFile := flag.String("proxy-file", "", "JSON file with proxy list [{url, username, password}, ...]")
+	proxyAPI := flag.String("proxy-api", "", "HTTP endpoint returning proxy list JSON")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -32,6 +34,21 @@ func main() {
 	}
 
 	srv := controller.NewServerWithConfig(config, *storePath, *addr)
+
+	// Set up proxy provider if configured
+	if *proxyFile != "" {
+		proxies, err := controller.LoadProxiesFromFile(*proxyFile)
+		if err != nil {
+			log.Fatalf("loading proxy file: %v", err)
+		}
+		srv.SetProxyProvider(controller.NewPoolProvider(proxies))
+	} else if *proxyAPI != "" {
+		proxies, err := controller.LoadProxiesFromHTTP(*proxyAPI)
+		if err != nil {
+			log.Fatalf("loading proxies from API: %v", err)
+		}
+		srv.SetProxyProvider(controller.NewPoolProvider(proxies))
+	}
 
 	httpServer := &http.Server{Addr: *addr, Handler: srv}
 

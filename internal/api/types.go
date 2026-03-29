@@ -14,7 +14,8 @@ type RegisterRequest struct {
 }
 
 type RegisterResponse struct {
-	AgentID string `json:"agent_id"`
+	AgentID string       `json:"agent_id"`
+	Proxy   *ProxyConfig `json:"proxy,omitempty"` // assigned proxy from the pool
 }
 
 // --- Proxy Config ---
