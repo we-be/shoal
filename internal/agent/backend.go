@@ -44,12 +44,14 @@ func (s *StubBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*a
 		timeout = time.Duration(req.MaxTimeout) * time.Millisecond
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, req.URL, nil)
+	navCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(navCtx, http.MethodGet, req.URL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("building request: %w", err)
 	}
 
-	s.client.Timeout = timeout
 	resp, err := s.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", req.URL, err)

@@ -3,6 +3,9 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/we-be/shoal/internal/agent"
 	"github.com/we-be/shoal/internal/api"
@@ -65,6 +68,16 @@ func main() {
 
 	log.Printf("shoal agent starting (controller=%s)", *controller)
 	a := agent.New(*addr, *controller, backend)
+
+	// Graceful shutdown on SIGINT/SIGTERM
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		sig := <-sigCh
+		log.Printf("received %s, shutting down agent...", sig)
+		a.Close()
+		os.Exit(0)
+	}()
 
 	if err := a.Run(); err != nil {
 		backend.Close()

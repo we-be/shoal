@@ -145,7 +145,7 @@ func (r *CFRenewer) scan() {
 				cfRenewalsFailed.Inc()
 			} else {
 				log.Printf("cf renewer: %s renewed successfully", domain)
-				cfRenewalsTotal.Inc()
+				// cfRenewalsTotal is incremented inside renewDomain
 			}
 		}(ed.domain, ed.url, ed.expiry)
 	}

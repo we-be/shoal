@@ -10,7 +10,6 @@ const (
 const (
 	StateAvailable = "available"
 	StateLeased    = "leased"
-	StateRecycling = "recycling"
 )
 
 // Backend types.
@@ -25,7 +24,6 @@ const (
 // Health statuses.
 const (
 	HealthOK        = "ok"
-	HealthDegraded  = "degraded"
 	HealthUnhealthy = "unhealthy"
 	HealthSaturated = "saturated"
 	HealthNoAgents  = "no_agents"

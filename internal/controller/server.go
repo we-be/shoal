@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -172,7 +173,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		MaxTimeout: req.MaxTimeout,
 		Actions:    req.Actions,
 	}
-	resp, err := s.forwardToAgent(agent, navReq)
+	resp, err := s.forwardToAgent(r.Context(), agent, navReq)
 	timer.ObserveDuration()
 
 	if err != nil {
@@ -276,14 +277,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // --- Agent Communication ---
 
-func (s *Server) forwardToAgent(agent *ManagedAgent, req api.NavigateRequest) (*api.NavigateResponse, error) {
+func (s *Server) forwardToAgent(ctx context.Context, agent *ManagedAgent, req api.NavigateRequest) (*api.NavigateResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
 	url := fmt.Sprintf("http://%s/navigate", agent.Address)
-	resp, err := s.client.Post(url, "application/json", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("building request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := s.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("contacting agent %s: %w", agent.Identity.ID, err)
 	}
@@ -356,13 +362,15 @@ func (s *Server) ensureMinnowCookies(agent *ManagedAgent, domain string) {
 		return
 	}
 
+	// All reads under one lock to avoid racing with RecordNavigation
+	s.pool.mu.RLock()
 	// Check if this minnow already has cookies for the domain
 	if state, ok := agent.Identity.Domains[domain]; ok && len(state.Cookies) > 0 {
+		s.pool.mu.RUnlock()
 		return
 	}
 
 	// Find a warm agent that has cookies for this domain
-	s.pool.mu.RLock()
 	var sourceCookies []api.Cookie
 	var sourceURL string
 	for _, other := range s.pool.agents {

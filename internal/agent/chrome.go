@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/fetch"
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
@@ -288,5 +287,3 @@ func findChrome() string {
 	return ""
 }
 
-// Suppress unused import for network package (used by CDPBackend in cdp.go)
-var _ = network.GetCookies
