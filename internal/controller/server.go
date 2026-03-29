@@ -68,6 +68,7 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 	s.mux.HandleFunc("POST /lease", s.handleLease)
 	s.mux.HandleFunc("POST /request", s.handleRequest)
 	s.mux.HandleFunc("POST /release", s.handleRelease)
+	s.mux.HandleFunc("POST /renew", s.handleRenew)
 
 	// Status & identity
 	s.mux.HandleFunc("GET /pool/status", s.handlePoolStatus)
@@ -189,6 +190,39 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Domain string `json:"domain"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Domain == "" {
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: "domain is required"})
+		return
+	}
+
+	// Find the URL that earned CF clearance for this domain
+	url := "https://www." + req.Domain + "/"
+	s.pool.mu.RLock()
+	for _, agent := range s.pool.agents {
+		if state, ok := agent.Identity.Domains[req.Domain]; ok && state.CFURL != "" {
+			url = state.CFURL
+			break
+		}
+	}
+	s.pool.mu.RUnlock()
+
+	log.Printf("manual CF renewal requested for %s (url=%s)", req.Domain, url)
+	go func() {
+		if err := s.renewer.renewDomain(req.Domain, url); err != nil {
+			log.Printf("manual renewal failed for %s: %v", req.Domain, err)
+		}
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"status": "renewal_started",
+		"domain": req.Domain,
+	})
 }
 
 func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {

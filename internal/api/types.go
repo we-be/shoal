@@ -129,6 +129,7 @@ type DomainState struct {
 	Cookies        []Cookie          `json:"cookies"`
 	HasCFClearance bool              `json:"has_cf_clearance"`
 	CFExpiry       *time.Time        `json:"cf_expiry,omitempty"`
+	CFURL          string            `json:"cf_url,omitempty"` // URL that earned the clearance (for renewal)
 	Tokens         map[string]string `json:"tokens,omitempty"` // named login sessions
 }
 

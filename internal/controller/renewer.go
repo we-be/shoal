@@ -85,7 +85,7 @@ func (r *CFRenewer) scan() {
 	type expiringDomain struct {
 		domain string
 		expiry time.Time
-		url    string // we'll construct a URL to visit
+		url    string
 	}
 
 	now := time.Now()
@@ -105,10 +105,15 @@ func (r *CFRenewer) scan() {
 
 			timeUntilExpiry := state.CFExpiry.Sub(now)
 			if timeUntilExpiry <= r.config.RenewBefore && timeUntilExpiry > 0 {
+				// Use the URL that originally earned the clearance
+				url := state.CFURL
+				if url == "" {
+					url = "https://www." + domain + "/"
+				}
 				expiring = append(expiring, expiringDomain{
 					domain: domain,
 					expiry: *state.CFExpiry,
-					url:    "https://" + domain + "/",
+					url:    url,
 				})
 			}
 		}
@@ -183,7 +188,6 @@ func (r *CFRenewer) renewDomain(domain, url string) error {
 
 	navResp, err := r.client.Post(controllerURL+"/request", "application/json", bytes.NewReader(navBody))
 	if err != nil {
-		// Release on error
 		releaseBody, _ := json.Marshal(api.ReleaseRequest{LeaseID: leaseResp.LeaseID})
 		r.client.Post(controllerURL+"/release", "application/json", bytes.NewReader(releaseBody))
 		return fmt.Errorf("navigation failed: %w", err)
@@ -194,5 +198,6 @@ func (r *CFRenewer) renewDomain(domain, url string) error {
 	releaseBody, _ := json.Marshal(api.ReleaseRequest{LeaseID: leaseResp.LeaseID})
 	r.client.Post(controllerURL+"/release", "application/json", bytes.NewReader(releaseBody))
 
+	cfRenewalsTotal.Inc()
 	return nil
 }
