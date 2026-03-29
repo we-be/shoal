@@ -45,7 +45,9 @@ func NewServer() *Server {
 	s.mux.HandleFunc("GET /pool/agents", s.handlePoolAgents)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
-	// Metrics
+	// Dashboard & metrics
+	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
+	s.mux.HandleFunc("GET /dashboard/agents", s.handleDashboardAgents)
 	s.mux.Handle("GET /metrics", promhttp.Handler())
 
 	return s
