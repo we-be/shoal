@@ -42,7 +42,7 @@ func newIdentity(backend, class, ip string) *api.BrowserIdentity {
 }
 
 // extractDomain pulls the registrable domain from a URL.
-// "https://www.hapag-lloyd.com/foo" -> "hapag-lloyd.com"
+// "https://www.example.com/foo" -> "example.com"
 func extractDomain(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {

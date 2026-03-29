@@ -29,7 +29,7 @@ type ProxyConfig struct {
 
 type LeaseRequest struct {
 	Consumer string `json:"consumer"`         // who's requesting, e.g. "oolu-scraper"
-	Domain   string `json:"domain"`           // target domain, e.g. "hapag-lloyd.com"
+	Domain   string `json:"domain"`           // target domain, e.g. "example.com"
 	Class    string `json:"class,omitempty"`   // "heavy", "light", or "" (auto)
 }
 
