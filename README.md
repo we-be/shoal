@@ -32,14 +32,14 @@ Shoal separates **browser orchestration** (pool management, leasing, routing, sc
 
 ## Results
 
-Tested against Cloudflare Turnstile on [2captcha.com](https://2captcha.com/demo/cloudflare-turnstile-challenge) and real [Hapag-Lloyd](https://www.hapag-lloyd.com) container tracking:
+Tested against Cloudflare Turnstile on [2captcha.com](https://2captcha.com/demo/cloudflare-turnstile-challenge) and real CF-protected shipping carrier sites:
 
 | Metric | Value |
 |--------|-------|
 | CF Turnstile solve | < 1s |
 | Minnow request (with CF cookies) | ~0.2s |
-| Sequential (1 minnow, 10 MBLs) | 2.92s |
-| Parallel (5 minnows, 10 MBLs) | 0.62s |
+| Sequential (1 minnow, 10 pages) | 2.92s |
+| Parallel (5 minnows, 10 pages) | 0.62s |
 | **Speedup** | **4.7x** |
 | Success rate | 10/10 |
 
@@ -82,15 +82,15 @@ Live web dashboard at `http://localhost:8180/dashboard` — auto-refreshes every
 ```bash
 # Acquire a lease (auto-routes to best available agent)
 curl -X POST localhost:8180/lease \
-  -d '{"consumer": "my-scraper", "domain": "hapag-lloyd.com"}'
+  -d '{"consumer": "my-scraper", "domain": "example.com"}'
 
 # Request a specific class
 curl -X POST localhost:8180/lease \
-  -d '{"consumer": "my-scraper", "domain": "hapag-lloyd.com", "class": "heavy"}'
+  -d '{"consumer": "my-scraper", "domain": "example.com", "class": "heavy"}'
 
 # Make a request through the lease
 curl -X POST localhost:8180/request \
-  -d '{"lease_id": "lease-abc123", "url": "https://hapag-lloyd.com/tracking?blno=HLCU123"}'
+  -d '{"lease_id": "lease-abc123", "url": "https://example.com/data?id=12345"}'
 
 # With browser actions (fill forms, click buttons)
 curl -X POST localhost:8180/request -d '{
@@ -235,7 +235,7 @@ shoal/
 ├── examples/
 │   ├── scrape.py                  # LB + identity test
 │   ├── login_test.py              # Auth persistence test
-│   ├── hlcu_test.py               # Hapag-Lloyd tracking test
+│   ├── hlcu_test.py               # CF-protected site tracking test
 │   ├── scale_test.py              # Multi-minnow parallel scaling
 │   └── testsite/main.go           # Auth-gated test site
 ├── .github/workflows/ci.yml       # Build + vet + test, release on tag

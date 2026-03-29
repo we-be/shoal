@@ -27,5 +27,5 @@ Initial release. Built from scratch in a single session.
 
 ### Tested Against
 - Cloudflare Turnstile on 2captcha.com demo — solved in <1s
-- Hapag-Lloyd container tracking (hapag-lloyd.com) — 10 real MBLs, 10/10 success, 4.7x parallel speedup with 5 minnows
+- CF-protected carrier tracking site — 10 real tracking pages, 10/10 success, 4.7x parallel speedup with 5 minnows
 - Cookie-based auth test site — login persistence across navigations and lease cycles
