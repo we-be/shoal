@@ -31,7 +31,7 @@ func main() {
 		MaxMissedChecks: *maxMissed,
 	}
 
-	srv := controller.NewServerWithConfig(config, *storePath)
+	srv := controller.NewServerWithConfig(config, *storePath, *addr)
 
 	httpServer := &http.Server{Addr: *addr, Handler: srv}
 

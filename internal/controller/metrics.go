@@ -97,6 +97,21 @@ var (
 		Help:      "Lease acquisitions by warmth level.",
 	}, []string{"warmth"})
 
+	// CF auto-renewal
+	cfRenewalsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "shoal",
+		Subsystem: "cf",
+		Name:      "renewals_total",
+		Help:      "Total successful proactive CF clearance renewals.",
+	})
+
+	cfRenewalsFailed = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "shoal",
+		Subsystem: "cf",
+		Name:      "renewals_failed_total",
+		Help:      "Total failed CF clearance renewal attempts.",
+	})
+
 	// Agent reconnection
 	agentReconnections = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "shoal",

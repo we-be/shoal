@@ -20,16 +20,17 @@ type Server struct {
 	events   *EventLog
 	health   *HealthChecker
 	store    *Store
+	renewer  *CFRenewer
 	mux      *http.ServeMux
 	client   *http.Client
 	started  time.Time
 }
 
 func NewServer() *Server {
-	return NewServerWithConfig(DefaultHealthConfig(), "shoal-pool.json")
+	return NewServerWithConfig(DefaultHealthConfig(), "shoal-pool.json", ":8180")
 }
 
-func NewServerWithConfig(healthCfg HealthConfig, storePath string) *Server {
+func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr string) *Server {
 	pool := NewPool()
 	events := NewEventLog(10 * time.Minute)
 
@@ -50,9 +51,13 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string) *Server {
 		started: time.Now(),
 	}
 
-	// Start health checker
+	// Start health checker and CF renewer
 	s.health = NewHealthChecker(pool, events, healthCfg)
 	s.health.Start()
+
+	selfURL := fmt.Sprintf("http://localhost%s", listenAddr)
+	s.renewer = NewCFRenewer(pool, events, DefaultRenewalConfig(), selfURL)
+	s.renewer.Start()
 
 	s.mux = http.NewServeMux()
 
@@ -84,6 +89,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Shutdown saves pool state and stops background goroutines.
 func (s *Server) Shutdown() {
+	s.renewer.Stop()
 	s.health.Stop()
 	s.store.Stop() // final snapshot
 	log.Printf("controller shutdown complete")
