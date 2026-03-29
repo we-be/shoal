@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/we-be/shoal/internal/api"
 )
@@ -20,10 +21,11 @@ type ManagedAgent struct {
 
 // Lease tracks an active lease binding a client to an agent.
 type Lease struct {
-	ID       string `json:"id"`
-	AgentID  string `json:"agent_id"` // the fish ID
-	Consumer string `json:"consumer"`
-	Domain   string `json:"domain"`
+	ID        string    `json:"id"`
+	AgentID   string    `json:"agent_id"` // the fish ID
+	Consumer  string    `json:"consumer"`
+	Domain    string    `json:"domain"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Pool manages the school — tracks registration, identities, leases, and routing.
@@ -109,10 +111,11 @@ func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 
 	leaseID := newLeaseID()
 	lease := &Lease{
-		ID:       leaseID,
-		AgentID:  bestID,
-		Consumer: req.Consumer,
-		Domain:   req.Domain,
+		ID:        leaseID,
+		AgentID:   bestID,
+		Consumer:  req.Consumer,
+		Domain:    req.Domain,
+		CreatedAt: time.Now(),
 	}
 	p.leases[leaseID] = lease
 

@@ -96,4 +96,19 @@ var (
 		Name:      "warm_matches_total",
 		Help:      "Lease acquisitions by warmth level.",
 	}, []string{"warmth"})
+
+	// Health checks
+	leasesExpired = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "shoal",
+		Subsystem: "lease",
+		Name:      "expired_total",
+		Help:      "Total leases auto-expired by health checker.",
+	})
+
+	agentsRemoved = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "shoal",
+		Subsystem: "agent",
+		Name:      "removed_total",
+		Help:      "Total agents removed due to failed health checks.",
+	})
 )

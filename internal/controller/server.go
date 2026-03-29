@@ -18,20 +18,33 @@ import (
 type Server struct {
 	pool     *Pool
 	events   *EventLog
+	health   *HealthChecker
 	mux      *http.ServeMux
 	client   *http.Client
 	started  time.Time
 }
 
 func NewServer() *Server {
+	return NewServerWithConfig(DefaultHealthConfig())
+}
+
+func NewServerWithConfig(healthCfg HealthConfig) *Server {
+	pool := NewPool()
+	events := NewEventLog(10 * time.Minute)
+
 	s := &Server{
-		pool: NewPool(),
-		events: NewEventLog(10 * time.Minute),
+		pool:   pool,
+		events: events,
 		client: &http.Client{
 			Timeout: 120 * time.Second,
 		},
 		started: time.Now(),
 	}
+
+	// Start health checker
+	s.health = NewHealthChecker(pool, events, healthCfg)
+	s.health.Start()
+
 	s.mux = http.NewServeMux()
 
 	// Agent registration
