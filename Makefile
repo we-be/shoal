@@ -4,13 +4,15 @@ CONTROLLER_PORT := 8180
 LP_BIN := $(shell which lightpanda)
 TESTSITE_PORT := 9090
 MINNOW_COUNT := 10
+VERSION := $(shell head -1 CHANGELOG.md | grep -oP 'v\d+\.\d+\.\d+' || echo "dev")
+LDFLAGS := -X github.com/we-be/shoal/internal/api.Version=$(VERSION)
 
 build:
 	@mkdir -p bin
-	go build -o bin/controller ./cmd/controller
-	go build -o bin/agent ./cmd/agent
+	go build -ldflags "$(LDFLAGS)" -o bin/controller ./cmd/controller
+	go build -ldflags "$(LDFLAGS)" -o bin/agent ./cmd/agent
 	go build -o bin/testsite ./examples/testsite
-	@echo "built controller + agent + testsite"
+	@echo "built controller (xiphosura) + agent (mullet) $(VERSION)"
 
 # Lightpanda cluster (3 agents)
 run: build stop

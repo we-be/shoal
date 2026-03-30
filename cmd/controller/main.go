@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/we-be/shoal/internal/api"
 	"github.com/we-be/shoal/internal/controller"
 )
 
@@ -24,7 +25,7 @@ func main() {
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Printf("shoal controller listening on %s", *addr)
+	log.Printf("shoal controller %s (%s) listening on %s", api.Version, api.ControllerCodename, *addr)
 
 	config := controller.HealthConfig{
 		CheckInterval:   *healthInterval,

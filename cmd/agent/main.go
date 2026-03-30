@@ -66,7 +66,7 @@ func main() {
 		log.Fatalf("failed to create %s backend: %v", *backendType, err)
 	}
 
-	log.Printf("shoal agent starting (controller=%s)", *controller)
+	log.Printf("shoal agent %s (%s) starting (controller=%s)", api.Version, api.AgentCodename, *controller)
 	a := agent.New(*addr, *controller, backend)
 
 	// Graceful shutdown on SIGINT/SIGTERM

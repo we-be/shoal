@@ -55,12 +55,14 @@ jobs:
 
       - name: Build release binaries
         run: |
+          VERSION=${{ steps.version.outputs.version }}
+          LDFLAGS="-s -w -X github.com/we-be/shoal/internal/api.Version=${VERSION}"
           for GOOS in linux darwin; do
             for GOARCH in amd64 arm64; do
               out="shoal-${GOOS}-${GOARCH}"
               mkdir -p "dist/${out}"
-              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w" -o "dist/${out}/controller" ./cmd/controller
-              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w" -o "dist/${out}/agent" ./cmd/agent
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" -o "dist/${out}/controller" ./cmd/controller
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" -o "dist/${out}/agent" ./cmd/agent
               tar -czf "dist/${out}.tar.gz" -C dist "${out}"
             done
           done
