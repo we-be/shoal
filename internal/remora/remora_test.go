@@ -89,6 +89,42 @@ func TestScanRateLimit(t *testing.T) {
 	}
 }
 
+func TestScanImperva(t *testing.T) {
+	d := Scan(&api.NavigateResponse{
+		HTML:        "<html><body>Request unsuccessful. Incapsula incident ID: 123</body></html>",
+		ContentSize: 5000,
+		Title:       "Request Unsuccessful",
+	})
+	if !d.Blocked || d.System != "imperva" {
+		t.Fatalf("expected imperva block, got blocked=%v system=%s", d.Blocked, d.System)
+	}
+}
+
+func TestScanAWSWAF(t *testing.T) {
+	d := Scan(&api.NavigateResponse{
+		HTML:        "<html><body>This request was blocked by AWS WAF</body></html>",
+		ContentSize: 500,
+		Title:       "Request Blocked",
+	})
+	if !d.Blocked || d.System != "aws_waf" {
+		t.Fatalf("expected aws_waf block, got blocked=%v system=%s", d.Blocked, d.System)
+	}
+	if d.Suggest != "retry_proxy" {
+		t.Fatalf("expected retry_proxy for AWS WAF, got %s", d.Suggest)
+	}
+}
+
+func TestScanShape(t *testing.T) {
+	d := Scan(&api.NavigateResponse{
+		HTML:        "<html><body><script>var _imp_apg_r_ = '123';</script></body></html>",
+		ContentSize: 5000,
+		Title:       "Site",
+	})
+	if !d.Blocked || d.System != "shape" {
+		t.Fatalf("expected shape block, got blocked=%v system=%s", d.Blocked, d.System)
+	}
+}
+
 func TestScanGeoBlock(t *testing.T) {
 	d := Scan(&api.NavigateResponse{
 		HTML:        "<html><body>This content is not available in your region</body></html>",

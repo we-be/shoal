@@ -70,6 +70,21 @@ func Scan(resp *api.NavigateResponse) Detection {
 		return *d
 	}
 
+	// Imperva / Incapsula
+	if d := detectImperva(title, lower); d != nil {
+		return *d
+	}
+
+	// AWS WAF
+	if d := detectAWSWAF(title, lower); d != nil {
+		return *d
+	}
+
+	// Shape Security (F5)
+	if d := detectShape(lower); d != nil {
+		return *d
+	}
+
 	// Generic bot detection
 	if d := detectGenericBot(title, lower); d != nil {
 		return *d
@@ -255,6 +270,84 @@ func detectKasada(body string) *Detection {
 			Type:       "bot_detect",
 			Confidence: 0.9,
 			Hints:      []string{"kasada bot detection"},
+			Suggest:    "retry_heavy",
+		}
+	}
+	return nil
+}
+
+// --- Generic Bot Detection ---
+
+// --- Imperva / Incapsula ---
+
+func detectImperva(title, body string) *Detection {
+	signals := 0
+	var hints []string
+
+	if strings.Contains(body, "incapsula") || strings.Contains(body, "imperva") {
+		signals += 2
+		hints = append(hints, "imperva/incapsula detected")
+	}
+	if strings.Contains(body, "/_Incapsula_Resource") {
+		signals++
+		hints = append(hints, "incapsula resource path")
+	}
+	if strings.Contains(body, "visid_incap_") {
+		signals++
+		hints = append(hints, "incapsula visitor cookie")
+	}
+	if strings.Contains(title, "request unsuccessful") && strings.Contains(body, "incapsula") {
+		signals += 2
+		hints = append(hints, "incapsula block page")
+	}
+
+	if signals >= 2 {
+		return &Detection{
+			Blocked:    true,
+			Quality:    "blocked",
+			System:     "imperva",
+			Type:       "bot_detect",
+			Confidence: min(float64(signals)*0.25, 1.0),
+			Hints:      hints,
+			Suggest:    "retry_heavy",
+		}
+	}
+	return nil
+}
+
+// --- AWS WAF ---
+
+func detectAWSWAF(title, body string) *Detection {
+	if strings.Contains(body, "aws waf") ||
+		strings.Contains(body, "awswaf") ||
+		(strings.Contains(title, "request blocked") && strings.Contains(body, "aws")) ||
+		strings.Contains(body, "x-amzn-waf-action") {
+		return &Detection{
+			Blocked:    true,
+			Quality:    "blocked",
+			System:     "aws_waf",
+			Type:       "bot_detect",
+			Confidence: 0.85,
+			Hints:      []string{"aws waf block detected"},
+			Suggest:    "retry_proxy",
+		}
+	}
+	return nil
+}
+
+// --- Shape Security (F5) ---
+
+func detectShape(body string) *Detection {
+	if strings.Contains(body, "shape security") ||
+		strings.Contains(body, "_imp_apg_r_") ||
+		strings.Contains(body, "shapeid") {
+		return &Detection{
+			Blocked:    true,
+			Quality:    "blocked",
+			System:     "shape",
+			Type:       "bot_detect",
+			Confidence: 0.85,
+			Hints:      []string{"f5 shape security detected"},
 			Suggest:    "retry_heavy",
 		}
 	}
