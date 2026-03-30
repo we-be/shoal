@@ -72,6 +72,8 @@ type NavigateResponse struct {
 	ContentSize  int               `json:"content_size"`              // bytes of HTML
 	Title        string            `json:"title,omitempty"`           // page <title>
 	Redirected   bool              `json:"redirected,omitempty"`      // URL changed from request
+	Quality      string            `json:"quality"`                   // "good", "partial", "blocked", "empty"
+	QualityHints []string          `json:"quality_hints,omitempty"`   // why quality is degraded
 	Cookies      []Cookie          `json:"cookies,omitempty"`
 	Headers      map[string]string `json:"headers,omitempty"`
 	UserAgent    string            `json:"user_agent,omitempty"`

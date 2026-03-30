@@ -42,6 +42,8 @@ class ShoalResponse:
     content_size: int = 0
     title: str = ""
     redirected: bool = False
+    quality: str = ""           # "good", "partial", "blocked", "empty"
+    quality_hints: list = field(default_factory=list)
     cookies: list[dict] = field(default_factory=list)
     headers: dict[str, str] = field(default_factory=dict)
     user_agent: str = ""
@@ -56,6 +58,8 @@ class ShoalResponse:
             content_size=d.get("content_size", 0),
             title=d.get("title", ""),
             redirected=d.get("redirected", False),
+            quality=d.get("quality", ""),
+            quality_hints=d.get("quality_hints", []),
             cookies=d.get("cookies", []),
             headers=d.get("headers", {}),
             user_agent=d.get("user_agent", ""),

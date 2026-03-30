@@ -177,6 +177,7 @@ func (s *Server) handleFetch(w http.ResponseWriter, r *http.Request) {
 		go s.propagateCookiesToMinnows(req.URL, resp.Cookies)
 	}
 
+	scoreResponseQuality(resp)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -296,6 +297,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		go s.propagateCookiesToMinnows(req.URL, resp.Cookies)
 	}
 
+	scoreResponseQuality(resp)
 	writeJSON(w, http.StatusOK, resp)
 }
 
