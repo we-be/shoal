@@ -169,6 +169,11 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		if err := chromedp.Run(navCtx,
 			chromedp.Navigate(req.URL),
 			chromedp.WaitReady("body", chromedp.ByQuery),
+			// Wait for JS to settle — WaitReady("body") fires too early on
+			// JS-heavy pages. This gives frameworks time to render.
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				return waitForNetworkIdle(ctx, 500*time.Millisecond)
+			}),
 		); err != nil {
 			return nil, fmt.Errorf("navigating to %s: %w", req.URL, err)
 		}
@@ -297,12 +302,50 @@ func executeAction(ctx context.Context, action api.Action) error {
 		)
 		return chromedp.Run(ctx, chromedp.Evaluate(js, nil))
 
+	case "wait_for":
+		// Wait for a selector to appear in the DOM, with timeout
+		waitMS := action.WaitMS
+		if waitMS == 0 {
+			waitMS = 10000
+		}
+		js := fmt.Sprintf(
+			`new Promise((resolve, reject) => {
+				const deadline = Date.now() + %d;
+				const check = () => {
+					if (document.querySelector(%q)) return resolve(true);
+					if (Date.now() > deadline) return reject(new Error('wait_for timeout: ' + %q));
+					setTimeout(check, 100);
+				};
+				check();
+			})`, waitMS, action.Selector, action.Selector,
+		)
+		return chromedp.Run(ctx, chromedp.Evaluate(js, nil))
+
 	case "eval":
 		return chromedp.Run(ctx, chromedp.Evaluate(action.Value, nil))
 
 	default:
 		return fmt.Errorf("unknown action type: %s", action.Type)
 	}
+}
+
+// waitForNetworkIdle waits until no network requests have fired for the given
+// quiet period. This catches JS-rendered content that loads after DOMContentLoaded.
+func waitForNetworkIdle(ctx context.Context, quiet time.Duration) error {
+	js := fmt.Sprintf(`new Promise(resolve => {
+		let timer;
+		const reset = () => {
+			clearTimeout(timer);
+			timer = setTimeout(resolve, %d);
+		};
+		const orig = window.fetch;
+		window.fetch = function() { reset(); return orig.apply(this, arguments); };
+		const origXHR = XMLHttpRequest.prototype.send;
+		XMLHttpRequest.prototype.send = function() { reset(); return origXHR.apply(this, arguments); };
+		reset();
+	})`, quiet.Milliseconds())
+
+	return chromedp.Run(ctx, chromedp.Evaluate(js, nil))
 }
 
 // CF challenge titles that indicate we're on a challenge page.
