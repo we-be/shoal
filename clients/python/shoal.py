@@ -201,6 +201,16 @@ class Shoal:
         finally:
             s.release()
 
+    # --- Tides ---
+
+    def tides(self) -> dict:
+        """Get current scraping cadence: interval, phase, boosts."""
+        return self._get("/tides/status")
+
+    def set_boost(self, name: str, factor: float):
+        """Set a tides boost. Use 0 to clear."""
+        self._post("/tides/boost", {"name": name, "factor": factor})
+
     # --- Status ---
 
     def status(self) -> PoolStatus:
