@@ -44,10 +44,10 @@ func (s *Server) handleNavigate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.URL == "" {
+	if req.URL == "" && len(req.Actions) == 0 {
 		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{
 			Error:  api.ErrBadRequest,
-			Detail: "url is required",
+			Detail: "url or actions required",
 		})
 		return
 	}
