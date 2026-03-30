@@ -146,7 +146,7 @@ func initCDPBackend(allocCtx context.Context, allocCancel context.CancelFunc, cm
 }
 
 func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*api.NavigateResponse, error) {
-	timeout := 30 * time.Second
+	timeout := 60 * time.Second
 	if req.MaxTimeout > 0 {
 		timeout = time.Duration(req.MaxTimeout) * time.Millisecond
 	}
