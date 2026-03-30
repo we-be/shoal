@@ -71,3 +71,13 @@ Use `api.ConstantName` instead of string literals. Defined in `internal/api/cons
 - `internal/api/types.go` — shared request/response types (NavigateRequest, XHRResponse, FetchRequest, ProxyConfig)
 - `internal/api/constants.go` — string constants
 - `pkg/shoal/client.go` — Go client library (Fetch, Lease, Navigate, Release)
+- `clients/python/shoal.py` — Python client library (Shoal, Session, ShoalResponse)
+
+## Release Naming
+
+Two-tier lowcountry naming:
+- **Major (vN.0.0)** = sealife species (Redfish, Sheepshead, Blue Crab). Pre-1.0 uses tidal names.
+- **Minor (vN.X.0)** = lowcountry events (King Tide, Shrimp Run, Harvest Moon, Pluff Mud)
+- **Patch (vN.X.Y)** = no subtitle
+
+Format: `vN.X.0 — Creature · Event` or pre-1.0 `v0.X.0 — Tidal Name`
