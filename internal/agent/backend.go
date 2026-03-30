@@ -19,6 +19,11 @@ type BrowserBackend interface {
 	Close() error
 }
 
+// ProxySetter is an optional interface for backends that support runtime proxy assignment.
+type ProxySetter interface {
+	SetProxy(proxy *api.ProxyConfig) error
+}
+
 // StubBackend is a simple HTTP-fetch backend for testing the orchestration layer.
 // No real browser — just proves the plumbing works.
 type StubBackend struct {

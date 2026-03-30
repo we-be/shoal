@@ -173,6 +173,19 @@ func (t *TLSClientBackend) SetCookies(targetURL string, cookies []api.Cookie) er
 	return nil
 }
 
+// SetProxy applies a proxy at runtime (called when controller assigns from pool).
+func (t *TLSClientBackend) SetProxy(proxy *api.ProxyConfig) error {
+	proxyURL := proxy.URL
+	if proxy.Username != "" {
+		proxyURL = insertProxyAuth(proxy.URL, proxy.Username, proxy.Password)
+	}
+	if err := t.client.SetProxy(proxyURL); err != nil {
+		return fmt.Errorf("setting proxy: %w", err)
+	}
+	log.Printf("tls-client proxy set: %s", proxy.URL)
+	return nil
+}
+
 func (t *TLSClientBackend) Health() api.HealthStatus {
 	return api.HealthStatus{
 		Status:  api.HealthOK,
