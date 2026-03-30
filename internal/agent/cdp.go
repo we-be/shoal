@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/we-be/shoal/internal/api"
@@ -255,9 +254,12 @@ func (b *CDPBackend) cleanupExtraTabs() {
 
 	for _, t := range targets {
 		if t.Type == "page" && t.TargetID != b.primaryID {
-			ctx, cancel := chromedp.NewContext(b.allocCtx, chromedp.WithTargetID(t.TargetID))
-			chromedp.Run(ctx, page.Close())
-			cancel()
+			// Use target.CloseTarget directly — more reliable than page.Close
+			// which requires attaching to the target first
+			chromedp.Run(b.allocCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+				target.CloseTarget(t.TargetID).Do(ctx)
+				return nil
+			}))
 			log.Printf("closed leaked tab: %s (%s)", t.TargetID, t.URL)
 		}
 	}
