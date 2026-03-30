@@ -1,3 +1,4 @@
 bin/
 /agent
 /controller
+shoal-pool.json
