@@ -1,3 +1,35 @@
+## v0.5.0 — Neap Tide (2026-03-30)
+
+Quality, resilience, and structure. The shoal knows when it's stuck.
+
+### New Packages
+- **remora** (`internal/remora`) — block detection module. Scans responses for Cloudflare, Akamai, DataDome, PerimeterX, Kasada, paywalls, rate limits, geo-blocks, JS shells, and app errors. Returns system, type, confidence, and suggested action (retry_heavy, retry_proxy, wait, skip). 8 tests.
+
+### New Features
+- **Response metadata** — `title`, `content_size`, `redirected`, `quality`, `quality_hints` on every response. Callers know what they got without parsing HTML.
+- **Text output** — `output_format: "text"` strips HTML via JS, returns clean `innerText`. No more fragile `<p>` tag parsing.
+- **Wait queue** — `POST /fetch` now queues instead of rejecting when pool is full. Requests wait for an agent instead of 503. `POST /lease` stays non-blocking.
+- **Medium agent class** — Lightpanda classified as `medium` (headless, no display) between `heavy` (Chrome+xvfb) and `light` (tls-client).
+- **Formations** — `make school-minnow`, `school-lp`, `school-cf`, `school-mixed` with `COUNT=N`.
+- **Action retry** — fill/click/submit retry 3x with 500ms backoff for DOM timing resilience.
+- **Network idle wait** — after navigation, waits for fetch/XHR activity to settle before actions.
+- **Proxy pool refresh** — `--proxy-refresh` interval re-reads proxy list from file/HTTP source.
+
+### Bug Fixes
+- Fill action dispatches input/change events for Angular/React/SSO forms (#16)
+- Dashboard fish ordering stable (sorted by ID, no more jumping)
+- Dashboard domain overflow scrollable
+- Tab cleanup uses `target.CloseTarget` (more reliable than `page.Close`)
+- Default CDP timeout bumped from 30s to 60s
+- `wait_for` action with configurable timeout for JS-rendered elements
+
+### Refactoring
+- Extracted `actions.go` from `cdp.go` (534→367 lines)
+- Removed `quality.go` (replaced by remora)
+- Long-lived multi-grouper stress test (2,427 req, 100% success)
+
+---
+
 ## v0.4.0 — Low Tide (2026-03-30)
 
 Client libraries and container-readiness. Both Go and Python consumers can call the shoal.
