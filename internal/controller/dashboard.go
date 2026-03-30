@@ -110,6 +110,7 @@ async function fetchText(path) {
 
 function renderStats(pool, agents) {
   const heavy = agents.filter(a => a.class === 'heavy');
+  const medium = agents.filter(a => a.class === 'medium');
   const light = agents.filter(a => a.class === 'light');
   const cfAgents = agents.filter(a => {
     const domains = a.domains || {};
@@ -131,6 +132,7 @@ function renderStats(pool, agents) {
     card('Fleet', [
       '<div class="stat-row">' +
         miniStat(heavy.length, 'groupers', 'red') +
+        miniStat(medium.length, 'redfish', 'cyan') +
         miniStat(light.length, 'minnows', 'green') +
       '</div>',
       '<div class="stat-row">' +
