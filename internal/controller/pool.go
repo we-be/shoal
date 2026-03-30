@@ -57,6 +57,8 @@ func (p *Pool) Register(req api.RegisterRequest) string {
 		switch req.Backend {
 		case api.BackendTLSClient:
 			class = api.ClassLight
+		case api.BackendLightpanda, api.BackendCDP:
+			class = api.ClassMedium
 		default:
 			class = api.ClassHeavy
 		}

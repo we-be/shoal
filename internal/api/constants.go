@@ -2,8 +2,9 @@ package api
 
 // Agent classes — groupers vs minnows.
 const (
-	ClassHeavy = "heavy" // full browser: Camoufox, Chrome, FlareSolverr
-	ClassLight = "light" // HTTP client: tls-client, curl-impersonate
+	ClassHeavy  = "heavy"  // full browser with display: Chrome, Camoufox, FlareSolverr
+	ClassMedium = "medium" // headless browser, no display: Lightpanda
+	ClassLight  = "light"  // HTTP client: tls-client, curl-impersonate
 )
 
 // Agent states.
