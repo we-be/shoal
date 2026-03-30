@@ -1,3 +1,22 @@
+## v0.4.0 — Low Tide (2026-03-30)
+
+Client libraries and container-readiness. Both Go and Python consumers can call the shoal.
+
+### New Features
+- **Python client** (`clients/python/shoal.py`) — `Shoal.fetch()` one-liner, `session()` context manager, XHR capture, `ShoalResponse` with `cookies_dict()` and `json()` helpers
+- **`POST /fetch`** — one-shot endpoint, no lease management needed. Auto lease→navigate→release
+- **Environment variables** — all config via `SHOAL_*` env vars for container deployments (CLI flags still take precedence)
+- **Docker images in CI** — release workflow builds and pushes to ghcr.io (controller, minnow, grouper)
+- **Version injection** — `api.Version` set via `-ldflags` at build time, component codenames (controller=xiphosura, agent=mullet)
+- **Proxy pool application** — agents now apply controller-assigned proxies at registration via `ProxySetter` interface (PR #12)
+
+### Bug Fixes
+- Fixed agent server rejecting empty URL when actions are present (stateful multi-step flows)
+- Fixed fish ID collision — increased entropy from 2 to 4 bytes
+- Fixed proxy pool: controller assigned proxies but agents never applied them
+
+---
+
 ## v0.3.0 — Cast Net (2026-03-29)
 
 Production-readiness release. Client library, proxy pools, XHR capture, and quality hardening.
