@@ -1,3 +1,26 @@
+## v0.6.0 — Shrimp Run (2026-03-30)
+
+New modules, new rhythms. The shoal moves with the tides.
+
+### New Packages
+- **tides** (`internal/tides`) — sinusoidal scraping cadence. Interval follows a cosine wave keyed to market hours (fast at peak, slow overnight). Adaptive boosts for volatility, news velocity, and sentiment shifts. 5 tests.
+
+### New Features
+- **GET /tides/status** — current interval, phase (high/rising/falling/low), active boosts
+- **POST /tides/boost** — set named boost factors from external systems
+- **Tides on dashboard** — live card showing interval, phase, and boosts
+- **Remora Prometheus metrics** — `shoal_remora_blocked_total{system,type}` and `shoal_remora_quality_total{quality}`
+- **Three new remora detectors** — Imperva/Incapsula, AWS WAF, Shape Security (F5). Total: 8 systems.
+- **Auto-retry in Python client** — blocked responses auto-escalate light→medium→heavy, but only for real bot detection (not rate limits)
+- **Tides in Go + Python clients** — `client.Tides()`, `client.SetTidesBoost()`, `s.tides()`, `s.set_boost()`
+- **Redfish count on dashboard** — Fleet card shows all three tiers (groupers/redfish/minnows)
+
+### Refactoring
+- Extracted `cookies.go` from `server.go` (533→431 lines)
+- Fixed auto-retry escalating API endpoints to Lightpanda unnecessarily
+
+---
+
 ## v0.5.0 — Neap Tide (2026-03-30)
 
 Quality, resilience, and structure. The shoal knows when it's stuck.
