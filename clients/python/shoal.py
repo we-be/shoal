@@ -135,8 +135,14 @@ class Shoal:
         max_timeout: int = 0,
         capture_xhr: bool = False,
         xhr_filter: str = "",
+        output_format: str = "",
+        auto_retry: bool = True,
     ) -> ShoalResponse:
-        """One-shot: fetch a URL through the pool (auto lease/release)."""
+        """One-shot: fetch a URL through the pool (auto lease/release).
+
+        When auto_retry is True (default), blocked responses are automatically
+        retried with a heavier agent class: light → medium → heavy.
+        """
         payload: dict[str, Any] = {"url": url, "consumer": consumer}
         if agent_class:
             payload["class"] = agent_class
@@ -148,9 +154,21 @@ class Shoal:
             payload["capture_xhr"] = True
         if xhr_filter:
             payload["capture_xhr_filter"] = xhr_filter
+        if output_format:
+            payload["output_format"] = output_format
 
         data = self._post("/fetch", payload)
-        return ShoalResponse.from_dict(data)
+        resp = ShoalResponse.from_dict(data)
+
+        # Auto-retry with heavier agent if blocked
+        if auto_retry and resp.quality in ("blocked", "empty"):
+            upgrade = _next_class(agent_class or "light")
+            if upgrade:
+                payload["class"] = upgrade
+                data = self._post("/fetch", payload)
+                resp = ShoalResponse.from_dict(data)
+
+        return resp
 
     # --- Lease API ---
 
@@ -227,3 +245,9 @@ class Shoal:
     def _get(self, path: str) -> Any:
         resp = self.http.get(f"{self.base_url}{path}")
         return resp.json()
+
+
+def _next_class(current: str) -> str | None:
+    """Return the next heavier agent class, or None if already heaviest."""
+    upgrade = {"light": "medium", "medium": "heavy", "": "medium"}
+    return upgrade.get(current)
