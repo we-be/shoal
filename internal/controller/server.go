@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/we-be/shoal/internal/api"
+	"github.com/we-be/shoal/internal/remora"
 )
 
 // Server is the controller's HTTP server — the tide that directs the shoal.
@@ -178,7 +179,9 @@ func (s *Server) handleFetch(w http.ResponseWriter, r *http.Request) {
 		go s.propagateCookiesToMinnows(req.URL, resp.Cookies)
 	}
 
-	scoreResponseQuality(resp)
+	detection := remora.Scan(resp)
+	resp.Quality = detection.Quality
+	resp.QualityHints = detection.Hints
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -299,7 +302,9 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		go s.propagateCookiesToMinnows(req.URL, resp.Cookies)
 	}
 
-	scoreResponseQuality(resp)
+	detection := remora.Scan(resp)
+	resp.Quality = detection.Quality
+	resp.QualityHints = detection.Hints
 	writeJSON(w, http.StatusOK, resp)
 }
 
