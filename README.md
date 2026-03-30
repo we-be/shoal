@@ -37,42 +37,59 @@ Shoal separates **orchestration** from **automation**. One Chrome grouper solves
 
 ```bash
 make build
-make run-cf                    # 1 grouper + 10 minnows
-make run-cf MINNOW_COUNT=20   # scale up
-make run                       # lightpanda cluster (no CF)
+make school-cf COUNT=10        # 1 grouper + 10 minnows
+make school-lp COUNT=5         # 5 lightpanda (JS, no CF)
+make school-minnow COUNT=20   # 20 tls-client (HTTP only)
+make school-mixed              # 2 lightpanda + 5 minnows
 make stop
 ```
 
-Dashboard at `localhost:8180/dashboard`. Prometheus metrics at `localhost:8180/metrics`.
+Dashboard at `localhost:8180/dashboard`. Metrics at `localhost:8180/metrics`.
 
-## Go Client
+## Client Libraries
+
+### Go
 
 ```go
 import "github.com/we-be/shoal/pkg/shoal"
 
 client := shoal.NewClient("http://localhost:8180")
 
-// One-liner fetch
+// One-liner
 resp, _ := client.Fetch(ctx, "https://example.com", "my-scraper")
-fmt.Println(resp.HTML)
 
 // With options
-resp, _ = client.Fetch(ctx, "https://example.com", "my-scraper",
+resp, _ = client.Fetch(ctx, url, "scraper",
     shoal.WithClass("heavy"),
-    shoal.WithActions([]api.Action{{Type: "click", Selector: "#btn"}}),
     shoal.WithCaptureXHR("api/v1"),
 )
 
-// Low-level lease control
-lease, _ := client.Lease(ctx, "my-scraper", "example.com")
-resp, _ = client.Navigate(ctx, lease.LeaseID, "https://example.com")
+// Manual lease control
+lease, _ := client.Lease(ctx, "scraper", "example.com")
+resp, _ = client.Navigate(ctx, lease.LeaseID, url)
 client.Release(ctx, lease.LeaseID)
+```
+
+### Python
+
+```python
+from shoal import Shoal
+
+s = Shoal("http://localhost:8180")
+
+# One-liner
+resp = s.fetch("https://example.com")
+
+# Session (auto release)
+with s.session("my-scraper", "example.com") as session:
+    page = session.get("https://example.com/data")
+    print(page.json())
 ```
 
 ## API
 
 ```bash
-# Simple fetch (auto lease/release)
+# Simple one-shot (auto lease/release)
 curl -X POST localhost:8180/fetch \
   -d '{"url": "https://example.com", "consumer": "my-scraper"}'
 
@@ -80,19 +97,28 @@ curl -X POST localhost:8180/fetch \
 curl -X POST localhost:8180/lease \
   -d '{"consumer": "my-scraper", "domain": "example.com"}'
 curl -X POST localhost:8180/request \
-  -d '{"lease_id": "lease-abc123", "url": "https://example.com"}'
-curl -X POST localhost:8180/release \
-  -d '{"lease_id": "lease-abc123"}'
+  -d '{"lease_id": "lease-abc", "url": "https://example.com"}'
+curl -X POST localhost:8180/release -d '{"lease_id": "lease-abc"}'
 
-# Stateful multi-step flow (omit URL to stay on current page)
+# Browser actions
 curl -X POST localhost:8180/request -d '{
-  "lease_id": "lease-abc123",
-  "actions": [{"type": "click", "selector": "#next-page"}]
+  "lease_id": "lease-abc",
+  "url": "https://example.com/login",
+  "actions": [
+    {"type": "fill", "selector": "#user", "value": "hunter"},
+    {"type": "submit", "selector": "#form"}
+  ]
 }'
 
-# Capture XHR/Fetch responses from the page
+# Stateful multi-step (omit URL to stay on page)
 curl -X POST localhost:8180/request -d '{
-  "lease_id": "lease-abc123",
+  "lease_id": "lease-abc",
+  "actions": [{"type": "click", "selector": "#next"}]
+}'
+
+# XHR capture
+curl -X POST localhost:8180/request -d '{
+  "lease_id": "lease-abc",
   "url": "https://example.com/app",
   "capture_xhr": true,
   "capture_xhr_filter": "api/v1"
@@ -104,19 +130,11 @@ curl -X POST localhost:8180/renew -d '{"domain": "example.com"}'
 
 ## Backends
 
-```go
-type BrowserBackend interface {
-    Navigate(ctx context.Context, req NavigateRequest) (*NavigateResponse, error)
-    Health() HealthStatus
-    Close() error
-}
-```
-
 | Backend | Class | Flag |
 |---------|-------|------|
 | Chrome | heavy | `-backend chrome` |
-| [Lightpanda](https://github.com/lightpanda-io/browser) | heavy | `-backend lightpanda` |
-| CDP (any browser) | heavy | `-backend cdp -cdp-url ws://...` |
+| [Lightpanda](https://github.com/lightpanda-io/browser) | medium | `-backend lightpanda` |
+| CDP (any) | medium | `-backend cdp -cdp-url ws://...` |
 | tls-client | light | `-backend tls-client` |
 | Stub | heavy | `-backend stub` |
 
@@ -124,13 +142,11 @@ type BrowserBackend interface {
 
 Per-agent: `-proxy-url http://host:port -proxy-user user -proxy-pass pass`
 
-Controller-level pool: `--proxy-file proxies.json` or `--proxy-api http://api/proxies`
-
-Proxies are assigned round-robin to agents on registration.
+Controller pool: `--proxy-file proxies.json` or `--proxy-api http://api/proxies`
 
 ## Identity & Warm Matching
 
-Each agent gets a persistent lowcountry fish name (`redfish-a3b2`, `mullet-8d24`). The controller tracks cookies, CF clearance, and visit history per domain, then routes leases to the warmest available agent:
+Each agent gets a persistent lowcountry fish name (`redfish-a3b2`, `mullet-8d24`). The controller tracks cookies, CF clearance, and visit history per domain:
 
 | Warmth | Meaning |
 |--------|---------|
@@ -148,4 +164,19 @@ Each agent gets a persistent lowcountry fish name (`redfish-a3b2`, `mullet-8d24`
 - **CF auto-renewal** — clearance refreshed before expiry
 - **Cookie catch-up** — late-joining minnows get cookies on first lease
 - **Tab cleanup** — leaked Chrome tabs closed after every navigation
-- **39 Go tests** with `-race` in CI
+- **AcquireWait** — clients can wait for an agent instead of getting rejected
+
+## Configuration
+
+All flags have `SHOAL_*` env var equivalents for container deployments. CLI flags take precedence.
+
+## Docker
+
+```bash
+docker compose up  # 1 grouper + 3 minnows
+
+# Or pull from ghcr.io
+docker pull ghcr.io/we-be/shoal-controller:latest
+docker pull ghcr.io/we-be/shoal-minnow:latest
+docker pull ghcr.io/we-be/shoal-grouper:latest
+```
