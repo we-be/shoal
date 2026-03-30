@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,8 +70,50 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=${{ steps.version.outputs.version }}
-          # Extract changelog for this version
           awk '/^## /{if(p)exit; p=1} p' CHANGELOG.md > /tmp/release-notes.md
           gh release create "$VERSION" dist/*.tar.gz \
             --title "$VERSION" \
             --notes-file /tmp/release-notes.md
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push controller image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: BINARY=controller
+          tags: |
+            ghcr.io/we-be/shoal-controller:${{ steps.version.outputs.version }}
+            ghcr.io/we-be/shoal-controller:latest
+          platforms: linux/amd64,linux/arm64
+
+      - name: Build and push minnow image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: BINARY=agent
+          tags: |
+            ghcr.io/we-be/shoal-minnow:${{ steps.version.outputs.version }}
+            ghcr.io/we-be/shoal-minnow:latest
+          platforms: linux/amd64,linux/arm64
+
+      - name: Build and push grouper image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.grouper
+          push: true
+          tags: |
+            ghcr.io/we-be/shoal-grouper:${{ steps.version.outputs.version }}
+            ghcr.io/we-be/shoal-grouper:latest
+          platforms: linux/amd64

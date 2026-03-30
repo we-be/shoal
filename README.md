@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/logo.png" alt="Shoal" height="160">
+
 **Scale headless browsers like a school of fish.**
 
 [![CI](https://github.com/we-be/shoal/actions/workflows/ci.yml/badge.svg)](https://github.com/we-be/shoal/actions/workflows/ci.yml)
@@ -43,29 +45,58 @@ make stop
 
 Dashboard at `localhost:8180/dashboard`. Prometheus metrics at `localhost:8180/metrics`.
 
+## Go Client
+
+```go
+import "github.com/we-be/shoal/pkg/shoal"
+
+client := shoal.NewClient("http://localhost:8180")
+
+// One-liner fetch
+resp, _ := client.Fetch(ctx, "https://example.com", "my-scraper")
+fmt.Println(resp.HTML)
+
+// With options
+resp, _ = client.Fetch(ctx, "https://example.com", "my-scraper",
+    shoal.WithClass("heavy"),
+    shoal.WithActions([]api.Action{{Type: "click", Selector: "#btn"}}),
+    shoal.WithCaptureXHR("api/v1"),
+)
+
+// Low-level lease control
+lease, _ := client.Lease(ctx, "my-scraper", "example.com")
+resp, _ = client.Navigate(ctx, lease.LeaseID, "https://example.com")
+client.Release(ctx, lease.LeaseID)
+```
+
 ## API
 
 ```bash
-# Lease an agent
+# Simple fetch (auto lease/release)
+curl -X POST localhost:8180/fetch \
+  -d '{"url": "https://example.com", "consumer": "my-scraper"}'
+
+# Manual lease lifecycle
 curl -X POST localhost:8180/lease \
   -d '{"consumer": "my-scraper", "domain": "example.com"}'
-
-# Navigate
 curl -X POST localhost:8180/request \
   -d '{"lease_id": "lease-abc123", "url": "https://example.com"}'
+curl -X POST localhost:8180/release \
+  -d '{"lease_id": "lease-abc123"}'
 
-# With actions
+# Stateful multi-step flow (omit URL to stay on current page)
 curl -X POST localhost:8180/request -d '{
   "lease_id": "lease-abc123",
-  "url": "https://example.com/login",
-  "actions": [
-    {"type": "fill", "selector": "#username", "value": "user"},
-    {"type": "submit", "selector": "#form"}
-  ]
+  "actions": [{"type": "click", "selector": "#next-page"}]
 }'
 
-# Release
-curl -X POST localhost:8180/release -d '{"lease_id": "lease-abc123"}'
+# Capture XHR/Fetch responses from the page
+curl -X POST localhost:8180/request -d '{
+  "lease_id": "lease-abc123",
+  "url": "https://example.com/app",
+  "capture_xhr": true,
+  "capture_xhr_filter": "api/v1"
+}'
 
 # Force CF renewal
 curl -X POST localhost:8180/renew -d '{"domain": "example.com"}'
@@ -89,7 +120,13 @@ type BrowserBackend interface {
 | tls-client | light | `-backend tls-client` |
 | Stub | heavy | `-backend stub` |
 
-Proxy: `-proxy-url http://host:port -proxy-user user -proxy-pass pass`
+## Proxy Support
+
+Per-agent: `-proxy-url http://host:port -proxy-user user -proxy-pass pass`
+
+Controller-level pool: `--proxy-file proxies.json` or `--proxy-api http://api/proxies`
+
+Proxies are assigned round-robin to agents on registration.
 
 ## Identity & Warm Matching
 
@@ -110,3 +147,5 @@ Each agent gets a persistent lowcountry fish name (`redfish-a3b2`, `mullet-8d24`
 - **Agent reconnection** — same address = same fish, cookies preserved
 - **CF auto-renewal** — clearance refreshed before expiry
 - **Cookie catch-up** — late-joining minnows get cookies on first lease
+- **Tab cleanup** — leaked Chrome tabs closed after every navigation
+- **39 Go tests** with `-race` in CI
