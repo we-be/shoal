@@ -182,6 +182,10 @@ func (s *Server) handleFetch(w http.ResponseWriter, r *http.Request) {
 	detection := remora.Scan(resp)
 	resp.Quality = detection.Quality
 	resp.QualityHints = detection.Hints
+	remoraQualityTotal.WithLabelValues(detection.Quality).Inc()
+	if detection.Blocked {
+		remoraBlockedTotal.WithLabelValues(detection.System, detection.Type).Inc()
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -305,6 +309,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	detection := remora.Scan(resp)
 	resp.Quality = detection.Quality
 	resp.QualityHints = detection.Hints
+	remoraQualityTotal.WithLabelValues(detection.Quality).Inc()
+	if detection.Blocked {
+		remoraBlockedTotal.WithLabelValues(detection.System, detection.Type).Inc()
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

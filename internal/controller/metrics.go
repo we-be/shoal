@@ -97,6 +97,21 @@ var (
 		Help:      "Lease acquisitions by warmth level.",
 	}, []string{"warmth"})
 
+	// Remora (block detection)
+	remoraBlockedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "shoal",
+		Subsystem: "remora",
+		Name:      "blocked_total",
+		Help:      "Total blocked responses by detection system.",
+	}, []string{"system", "type"})
+
+	remoraQualityTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "shoal",
+		Subsystem: "remora",
+		Name:      "quality_total",
+		Help:      "Total responses by quality level.",
+	}, []string{"quality"})
+
 	// CF auto-renewal
 	cfRenewalsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "shoal",
