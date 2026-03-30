@@ -1,3 +1,31 @@
+## v0.3.0 — Cast Net (2026-03-29)
+
+Production-readiness release. Client library, proxy pools, XHR capture, and quality hardening.
+
+### New Features
+- **Go client library** (`pkg/shoal`) — `client.Fetch(ctx, url, consumer)` one-liner, or low-level Lease/Navigate/Release with full control
+- **XHR/Fetch response capture** — `capture_xhr: true` on NavigateRequest intercepts API responses via CDP Network events, with optional URL substring filter (#10)
+- **Stateful multi-step navigation** — URL is now optional in NavigateRequest, enabling multi-page login flows (PingFederate, Okta) without losing page state (#7)
+- **Proxy pool provider** — controller-level proxy management with round-robin selection, health-based filtering, file/HTTP loading (#8)
+- **Proxy assignment on registration** — controller assigns proxies to agents from the pool, returned in RegisterResponse
+
+### Bug Fixes
+- **Chrome tab leak** — each navigation leaked a page target; now cleaned up via `cleanupExtraTabs()` after every Navigate (#4)
+- **Race condition** — `ensureMinnowCookies` read identity domains without lock
+- **StubBackend race** — shared client Timeout mutated during concurrent requests, now uses context timeout
+- **Double metric counting** — `cfRenewalsTotal` was incremented twice per renewal
+- **Context propagation** — `forwardToAgent` now uses caller's context so client disconnects cancel in-flight requests
+- **Agent graceful shutdown** — SIGINT/SIGTERM handler calls `backend.Close()`
+
+### Quality
+- **39 Go tests** with `-race` detection in CI
+- **staticcheck** clean
+- **CLAUDE.md** project context for agents and contributors
+- Removed dead code (unused constants, imports)
+- Fixed flaky tests (map iteration order)
+
+---
+
 ## v0.2.0 — Slack Tide (2026-03-29)
 
 Reliability and observability release. The shoal now heals itself.
