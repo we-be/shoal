@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"log"
@@ -30,9 +31,11 @@ type Lease struct {
 
 // Pool manages the school — tracks registration, identities, leases, and routing.
 type Pool struct {
-	mu     sync.RWMutex
-	agents map[string]*ManagedAgent // fish_id -> agent
-	leases map[string]*Lease        // lease_id -> lease
+	mu       sync.RWMutex
+	agents   map[string]*ManagedAgent // fish_id -> agent
+	leases   map[string]*Lease        // lease_id -> lease
+	waiters  []chan struct{}           // notify when an agent becomes available
+	waiterMu sync.Mutex
 }
 
 func NewPool() *Pool {
@@ -93,9 +96,48 @@ func (p *Pool) Register(req api.RegisterRequest) string {
 	return identity.ID
 }
 
-// Acquire finds the best available agent for the requested domain.
-// Filters by class if specified, then ranks by domain warmth.
+// Acquire finds the best available agent immediately or returns pool_exhausted.
 func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
+	return p.tryAcquire(req)
+}
+
+// AcquireWait blocks until an agent is available or the context is cancelled.
+// This is what callers should use when they'd rather wait than get rejected.
+func (p *Pool) AcquireWait(ctx context.Context, req api.LeaseRequest) (*Lease, error) {
+	// Fast path: try immediately
+	lease, err := p.tryAcquire(req)
+	if err == nil {
+		return lease, nil
+	}
+
+	leaseQueued.Inc()
+
+	// Slow path: wait for an agent to become available
+	notify := make(chan struct{}, 1)
+	p.waiterMu.Lock()
+	p.waiters = append(p.waiters, notify)
+	p.waiterMu.Unlock()
+
+	for {
+		select {
+		case <-ctx.Done():
+			leasesDenied.Inc()
+			return nil, fmt.Errorf(api.ErrPoolExhausted)
+		case <-notify:
+			lease, err := p.tryAcquire(req)
+			if err == nil {
+				return lease, nil
+			}
+			// Another waiter got it — re-register and wait again
+			p.waiterMu.Lock()
+			p.waiters = append(p.waiters, notify)
+			p.waiterMu.Unlock()
+		}
+	}
+}
+
+// tryAcquire attempts a non-blocking acquire.
+func (p *Pool) tryAcquire(req api.LeaseRequest) (*Lease, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -108,7 +150,6 @@ func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 			continue
 		}
 
-		// Filter by class if requested
 		if req.Class != "" && a.Class != req.Class {
 			continue
 		}
@@ -122,7 +163,6 @@ func (p *Pool) Acquire(req api.LeaseRequest) (*Lease, error) {
 	}
 
 	if bestAgent == nil {
-		leasesDenied.Inc()
 		return nil, fmt.Errorf(api.ErrPoolExhausted)
 	}
 
@@ -167,6 +207,19 @@ func (p *Pool) Release(leaseID string) error {
 	delete(p.leases, leaseID)
 	leasesReleased.Inc()
 	p.updateGauges()
+
+	// Wake one waiter if any are queued
+	p.waiterMu.Lock()
+	if len(p.waiters) > 0 {
+		ch := p.waiters[0]
+		p.waiters = p.waiters[1:]
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	p.waiterMu.Unlock()
+
 	return nil
 }
 

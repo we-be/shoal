@@ -120,6 +120,14 @@ var (
 		Help:      "Total agent reconnections (same address, identity preserved).",
 	})
 
+	// Queue
+	leaseQueued = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "shoal",
+		Subsystem: "lease",
+		Name:      "queued_total",
+		Help:      "Total lease requests that waited in queue (pool was full).",
+	})
+
 	// Health checks
 	leasesExpired = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "shoal",

@@ -128,7 +128,7 @@ func (s *Server) handleFetch(w http.ResponseWriter, r *http.Request) {
 	domain := extractDomain(req.URL)
 
 	// Acquire
-	lease, err := s.pool.Acquire(api.LeaseRequest{Consumer: consumer, Domain: domain, Class: req.Class})
+	lease, err := s.pool.AcquireWait(r.Context(), api.LeaseRequest{Consumer: consumer, Domain: domain, Class: req.Class})
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, api.ErrorResponse{
 			Error:  api.ErrPoolExhausted,
