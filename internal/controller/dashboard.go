@@ -140,6 +140,9 @@ function renderStats(pool, agents) {
     card('Activity', [
       '<div id="activity-stats"></div>',
     ]),
+    card('Tides', [
+      '<div id="tides-stats"></div>',
+    ]),
   ].join('');
 }
 
@@ -329,16 +332,30 @@ function renderCharts(buckets) {
 
 async function refresh() {
   try {
-    const [pool, agents, metrics, timeseries] = await Promise.all([
+    const [pool, agents, metrics, timeseries, tidesData] = await Promise.all([
       fetchJSON('/pool/status'),
       fetchJSON('/dashboard/agents'),
       fetchText('/metrics'),
       fetchJSON('/dashboard/timeseries'),
+      fetchJSON('/tides/status').catch(() => null),
     ]);
     renderStats(pool, agents);
     renderAgents(agents, pool);
     renderMetrics(metrics);
     renderCharts(timeseries);
+    if (tidesData) {
+      const el = document.getElementById('tides-stats');
+      if (el) {
+        const phaseColors = {high:'green',rising:'cyan',falling:'yellow',low:'purple'};
+        const pc = phaseColors[tidesData.phase] || '';
+        const secs = Math.round(tidesData.interval / 1e9);
+        const boostList = Object.entries(tidesData.boosts || {}).map(([k,v]) => k+':'+v.toFixed(1)).join(' ') || 'none';
+        el.innerHTML =
+          '<div class="stat-sm ' + pc + '">' + secs + 's</div><div class="stat-label">interval</div>' +
+          '<div style="margin-top:6px"><span class="tag tag-' + (tidesData.phase === 'high' ? 'available' : tidesData.phase === 'low' ? 'heavy' : 'leased') + '">' + tidesData.phase + ' tide</span></div>' +
+          '<div style="margin-top:4px;font-size:10px;color:#484f58">boosts: ' + boostList + '</div>';
+      }
+    }
     document.getElementById('tick').textContent = new Date().toLocaleTimeString();
   } catch (e) {
     document.getElementById('tick').textContent = 'error: ' + e.message;
