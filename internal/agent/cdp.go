@@ -185,9 +185,9 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		}
 	}
 
-	// Execute post-navigation actions (fill forms, click buttons, etc.)
+	// Execute post-navigation actions with retry (DOM timing resilience)
 	for _, action := range req.Actions {
-		if err := executeAction(navCtx, action); err != nil {
+		if err := executeActionWithRetry(navCtx, action, 3); err != nil {
 			return nil, fmt.Errorf("action %s on %s: %w", action.Type, action.Selector, err)
 		}
 	}
@@ -263,6 +263,28 @@ func (b *CDPBackend) cleanupExtraTabs() {
 			log.Printf("closed leaked tab: %s (%s)", t.TargetID, t.URL)
 		}
 	}
+}
+
+// executeActionWithRetry wraps executeAction with retry logic.
+// DOM timing issues (element exists but isn't interactive) usually resolve
+// within 1s. Retrying avoids failing the entire request for transient issues.
+func executeActionWithRetry(ctx context.Context, action api.Action, maxAttempts int) error {
+	// Don't retry wait/eval actions — they have their own timeout logic
+	if action.Type == "wait" || action.Type == "wait_for" || action.Type == "eval" {
+		return executeAction(ctx, action)
+	}
+
+	var lastErr error
+	for attempt := range maxAttempts {
+		lastErr = executeAction(ctx, action)
+		if lastErr == nil {
+			return nil
+		}
+		if attempt < maxAttempts-1 {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	return lastErr
 }
 
 // executeAction runs a single browser automation step via JS evaluation.
