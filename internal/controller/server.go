@@ -154,6 +154,7 @@ func (s *Server) handleFetch(w http.ResponseWriter, r *http.Request) {
 		Actions:          req.Actions,
 		CaptureXHR:       req.CaptureXHR,
 		CaptureXHRFilter: req.CaptureXHRFilter,
+		OutputFormat:     req.OutputFormat,
 	}
 
 	timer := prometheus.NewTimer(requestDuration.WithLabelValues(domain, agent.Class))
@@ -272,6 +273,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Actions:          req.Actions,
 		CaptureXHR:       req.CaptureXHR,
 		CaptureXHRFilter: req.CaptureXHRFilter,
+		OutputFormat:     req.OutputFormat,
 	}
 	resp, err := s.forwardToAgent(r.Context(), agent, navReq)
 	timer.ObserveDuration()

@@ -55,6 +55,7 @@ type NavigateRequest struct {
 	Actions          []Action `json:"actions,omitempty"`           // post-navigation actions
 	CaptureXHR       bool     `json:"capture_xhr,omitempty"`      // capture XHR/fetch responses
 	CaptureXHRFilter string   `json:"capture_xhr_filter,omitempty"` // URL substring filter
+	OutputFormat     string   `json:"output_format,omitempty"`     // "html" (default), "markdown", "text"
 }
 
 // Action is a browser automation step — fill a form, click a button, wait.
@@ -110,11 +111,12 @@ type SetCookiesRequest struct {
 type FetchRequest struct {
 	URL              string   `json:"url"`
 	Consumer         string   `json:"consumer,omitempty"`         // who's requesting (default: "fetch")
-	Class            string   `json:"class,omitempty"`            // "heavy", "light", or "" (auto)
+	Class            string   `json:"class,omitempty"`            // "heavy", "medium", "light", or "" (auto)
 	MaxTimeout       int      `json:"max_timeout,omitempty"`      // milliseconds
 	Actions          []Action `json:"actions,omitempty"`
 	CaptureXHR       bool     `json:"capture_xhr,omitempty"`
 	CaptureXHRFilter string   `json:"capture_xhr_filter,omitempty"`
+	OutputFormat     string   `json:"output_format,omitempty"`    // "html" (default), "text"
 }
 
 // --- Request (client -> controller, routed to agent) ---
@@ -126,6 +128,7 @@ type RequestPayload struct {
 	Actions          []Action `json:"actions,omitempty"`
 	CaptureXHR       bool     `json:"capture_xhr,omitempty"`
 	CaptureXHRFilter string   `json:"capture_xhr_filter,omitempty"`
+	OutputFormat     string   `json:"output_format,omitempty"`
 }
 
 // --- Pool Status ---

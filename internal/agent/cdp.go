@@ -198,8 +198,19 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 	var pageTitle string
 	var cookies []*network.Cookie
 
+	// Choose output format
+	getContent := chromedp.OuterHTML("html", &html, chromedp.ByQuery)
+	if req.OutputFormat == "text" || req.OutputFormat == "markdown" {
+		// Extract readable text via JS — strips tags, ads, nav, scripts
+		getContent = chromedp.Evaluate(`(() => {
+			const clone = document.body.cloneNode(true);
+			clone.querySelectorAll('script,style,nav,header,footer,aside,iframe').forEach(el => el.remove());
+			return clone.innerText.replace(/\n{3,}/g, '\n\n').trim();
+		})()`, &html)
+	}
+
 	if err := chromedp.Run(navCtx,
-		chromedp.OuterHTML("html", &html, chromedp.ByQuery),
+		getContent,
 		chromedp.Location(&currentURL),
 		chromedp.Title(&pageTitle),
 		chromedp.ActionFunc(func(ctx context.Context) error {

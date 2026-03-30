@@ -23,6 +23,7 @@ func main() {
 	maxMissed := flag.Int("max-missed-checks", api.EnvInt("SHOAL_MAX_MISSED_CHECKS", 3), "failed checks before removal (SHOAL_MAX_MISSED_CHECKS)")
 	proxyFile := flag.String("proxy-file", api.EnvOr("SHOAL_PROXY_FILE", ""), "proxy list JSON file (SHOAL_PROXY_FILE)")
 	proxyAPI := flag.String("proxy-api", api.EnvOr("SHOAL_PROXY_API", ""), "proxy list HTTP endpoint (SHOAL_PROXY_API)")
+	proxyRefresh := flag.Duration("proxy-refresh", api.EnvDuration("SHOAL_PROXY_REFRESH", 5*time.Minute), "proxy list refresh interval (SHOAL_PROXY_REFRESH)")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -42,13 +43,17 @@ func main() {
 		if err != nil {
 			log.Fatalf("loading proxy file: %v", err)
 		}
-		srv.SetProxyProvider(controller.NewPoolProvider(proxies))
+		pool := controller.NewPoolProvider(proxies)
+		pool.StartRefresh(*proxyFile, "file", *proxyRefresh)
+		srv.SetProxyProvider(pool)
 	} else if *proxyAPI != "" {
 		proxies, err := controller.LoadProxiesFromHTTP(*proxyAPI)
 		if err != nil {
 			log.Fatalf("loading proxies from API: %v", err)
 		}
-		srv.SetProxyProvider(controller.NewPoolProvider(proxies))
+		pool := controller.NewPoolProvider(proxies)
+		pool.StartRefresh(*proxyAPI, "http", *proxyRefresh)
+		srv.SetProxyProvider(pool)
 	}
 
 	httpServer := &http.Server{Addr: *addr, Handler: srv}

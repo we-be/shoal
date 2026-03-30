@@ -61,10 +61,13 @@ type proxyHealth struct {
 // PoolProvider manages a list of proxies with round-robin selection
 // and health-based filtering.
 type PoolProvider struct {
-	mu      sync.Mutex
-	proxies []api.ProxyConfig
-	health  map[string]*proxyHealth
-	index   int
+	mu       sync.Mutex
+	proxies  []api.ProxyConfig
+	health   map[string]*proxyHealth
+	index    int
+	source   string        // file path or HTTP URL for refresh
+	sourceKind string      // "file" or "http"
+	stopCh   chan struct{}
 }
 
 func NewPoolProvider(proxies []api.ProxyConfig) *PoolProvider {
@@ -75,6 +78,73 @@ func NewPoolProvider(proxies []api.ProxyConfig) *PoolProvider {
 	return &PoolProvider{
 		proxies: proxies,
 		health:  health,
+		stopCh:  make(chan struct{}),
+	}
+}
+
+// StartRefresh periodically reloads the proxy list from the original source.
+func (p *PoolProvider) StartRefresh(source, kind string, interval time.Duration) {
+	p.source = source
+	p.sourceKind = kind
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-p.stopCh:
+				return
+			case <-ticker.C:
+				p.refresh()
+			}
+		}
+	}()
+
+	log.Printf("proxy pool refresh enabled: %s every %s", source, interval)
+}
+
+func (p *PoolProvider) Stop() {
+	close(p.stopCh)
+}
+
+func (p *PoolProvider) refresh() {
+	var proxies []api.ProxyConfig
+	var err error
+
+	switch p.sourceKind {
+	case "file":
+		proxies, err = LoadProxiesFromFile(p.source)
+	case "http":
+		proxies, err = LoadProxiesFromHTTP(p.source)
+	default:
+		return
+	}
+
+	if err != nil {
+		log.Printf("proxy refresh failed: %v", err)
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Merge health data — keep stats for existing proxies, add new ones
+	newHealth := make(map[string]*proxyHealth, len(proxies))
+	for _, proxy := range proxies {
+		if existing, ok := p.health[proxy.URL]; ok {
+			newHealth[proxy.URL] = existing
+		} else {
+			newHealth[proxy.URL] = &proxyHealth{}
+		}
+	}
+
+	added := len(proxies) - len(p.proxies)
+	p.proxies = proxies
+	p.health = newHealth
+
+	if added != 0 {
+		log.Printf("proxy pool refreshed: %d proxies (%+d)", len(proxies), added)
 	}
 }
 
