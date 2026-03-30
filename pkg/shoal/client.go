@@ -130,6 +130,34 @@ func (c *Client) Renew(ctx context.Context, domain string) error {
 	return c.post(ctx, "/renew", req, &resp)
 }
 
+// --- Tides ---
+
+// TidesStatus is the current scraping cadence.
+type TidesStatus struct {
+	Interval int64              `json:"interval"` // nanoseconds
+	Phase    string             `json:"phase"`    // "high", "rising", "falling", "low"
+	Boosts   map[string]float64 `json:"boosts"`
+}
+
+// Tides returns the current scraping cadence.
+func (c *Client) Tides(ctx context.Context) (*TidesStatus, error) {
+	var resp TidesStatus
+	if err := c.get(ctx, "/tides/status", &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// SetTidesBoost sets a named boost factor on the cadence.
+func (c *Client) SetTidesBoost(ctx context.Context, name string, factor float64) error {
+	req := struct {
+		Name   string  `json:"name"`
+		Factor float64 `json:"factor"`
+	}{Name: name, Factor: factor}
+	var resp TidesStatus
+	return c.post(ctx, "/tides/boost", req, &resp)
+}
+
 // --- Status ---
 
 // Status returns pool counts.

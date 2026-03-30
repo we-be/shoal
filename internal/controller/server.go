@@ -87,6 +87,7 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 
 	// Tides
 	s.mux.HandleFunc("GET /tides/status", s.handleTidesStatus)
+	s.mux.HandleFunc("POST /tides/boost", s.handleTidesBoost)
 
 	// Dashboard & metrics
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
@@ -438,6 +439,20 @@ func (s *Server) forwardToAgent(ctx context.Context, agent *ManagedAgent, req ap
 }
 
 func (s *Server) handleTidesStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.tides.Status())
+}
+
+func (s *Server) handleTidesBoost(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name   string  `json:"name"`
+		Factor float64 `json:"factor"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: "name and factor required"})
+		return
+	}
+	s.tides.SetBoost(req.Name, req.Factor)
+	log.Printf("tides boost set: %s=%.2f", req.Name, req.Factor)
 	writeJSON(w, http.StatusOK, s.tides.Status())
 }
 
