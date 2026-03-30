@@ -100,6 +100,18 @@ type SetCookiesRequest struct {
 	Cookies []Cookie `json:"cookies"`
 }
 
+// --- Fetch (simple one-shot API) ---
+
+type FetchRequest struct {
+	URL              string   `json:"url"`
+	Consumer         string   `json:"consumer,omitempty"`         // who's requesting (default: "fetch")
+	Class            string   `json:"class,omitempty"`            // "heavy", "light", or "" (auto)
+	MaxTimeout       int      `json:"max_timeout,omitempty"`      // milliseconds
+	Actions          []Action `json:"actions,omitempty"`
+	CaptureXHR       bool     `json:"capture_xhr,omitempty"`
+	CaptureXHRFilter string   `json:"capture_xhr_filter,omitempty"`
+}
+
 // --- Request (client -> controller, routed to agent) ---
 
 type RequestPayload struct {

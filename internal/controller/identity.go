@@ -18,9 +18,9 @@ var fish = []string{
 	"whiting", "shad", "pinfish", "pigfish", "minnow",
 }
 
-// newFishID generates a unique browser identity like "redfish-a3b2".
+// newFishID generates a unique browser identity like "redfish-a3b2c5d6".
 func newFishID() string {
-	b := make([]byte, 2)
+	b := make([]byte, 4)
 	rand.Read(b)
 	name := fish[b[0]%byte(len(fish))]
 	return fmt.Sprintf("%s-%x", name, b)

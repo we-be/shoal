@@ -66,7 +66,10 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 	// Agent registration
 	s.mux.HandleFunc("POST /register", s.handleRegister)
 
-	// Client-facing lease API
+	// Simple API — fire and forget
+	s.mux.HandleFunc("POST /fetch", s.handleFetch)
+
+	// Lease API — full control
 	s.mux.HandleFunc("POST /lease", s.handleLease)
 	s.mux.HandleFunc("POST /request", s.handleRequest)
 	s.mux.HandleFunc("POST /release", s.handleRelease)
@@ -102,6 +105,79 @@ func (s *Server) Shutdown() {
 	s.health.Stop()
 	s.store.Stop() // final snapshot
 	log.Printf("controller shutdown complete")
+}
+
+// --- Simple API ---
+
+func (s *Server) handleFetch(w http.ResponseWriter, r *http.Request) {
+	var req api.FetchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: err.Error()})
+		return
+	}
+
+	if req.URL == "" {
+		writeJSON(w, http.StatusBadRequest, api.ErrorResponse{Error: api.ErrBadRequest, Detail: "url is required"})
+		return
+	}
+
+	consumer := req.Consumer
+	if consumer == "" {
+		consumer = "fetch"
+	}
+	domain := extractDomain(req.URL)
+
+	// Acquire
+	lease, err := s.pool.Acquire(api.LeaseRequest{Consumer: consumer, Domain: domain, Class: req.Class})
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, api.ErrorResponse{
+			Error:  api.ErrPoolExhausted,
+			Detail: "no agents available — the shoal is fully committed",
+		})
+		return
+	}
+	defer s.pool.Release(lease.ID)
+
+	agent, err := s.pool.GetAgent(lease.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, api.ErrorResponse{Error: api.ErrAgentNotFound, Detail: err.Error()})
+		return
+	}
+
+	// Lazy cookie catch-up
+	go s.ensureMinnowCookies(agent, domain)
+
+	// Navigate
+	navReq := api.NavigateRequest{
+		URL:              req.URL,
+		MaxTimeout:       req.MaxTimeout,
+		Actions:          req.Actions,
+		CaptureXHR:       req.CaptureXHR,
+		CaptureXHRFilter: req.CaptureXHRFilter,
+	}
+
+	timer := prometheus.NewTimer(requestDuration.WithLabelValues(domain, agent.Class))
+	resp, err := s.forwardToAgent(r.Context(), agent, navReq)
+	timer.ObserveDuration()
+
+	if err != nil {
+		requestsTotal.WithLabelValues(domain, agent.Class, "error").Inc()
+		s.events.Record("error", domain, agent.Class)
+		writeJSON(w, http.StatusBadGateway, api.ErrorResponse{Error: api.ErrAgentError, Detail: err.Error()})
+		return
+	}
+
+	requestsTotal.WithLabelValues(domain, agent.Class, "ok").Inc()
+	s.events.Record("ok", domain, agent.Class)
+	s.pool.RecordNavigation(lease.ID, req.URL, resp.Cookies)
+
+	if agent.Class == api.ClassHeavy && hasCFClearance(resp.Cookies) {
+		cfSolvesTotal.Inc()
+		s.events.Record("cf_solve", domain, agent.Class)
+		go s.propagateCookiesToMinnows(req.URL, resp.Cookies)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // --- Agent Registration ---
