@@ -77,9 +77,6 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 	s.mux.HandleFunc("GET /pool/agents", s.handlePoolAgents)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
-	// GnoTrace v1 compatibility
-	s.mux.HandleFunc("POST /v1", s.handleV1)
-
 	// Dashboard & metrics
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	s.mux.HandleFunc("GET /dashboard/agents", s.handleDashboardAgents)
