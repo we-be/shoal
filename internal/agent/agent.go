@@ -78,6 +78,18 @@ func (a *Agent) registerLoop() {
 		resp.Body.Close()
 
 		a.agentID = regResp.AgentID
+
+		// Apply proxy from controller if assigned and backend supports it
+		if regResp.Proxy != nil && regResp.Proxy.URL != "" {
+			if ps, ok := a.backend.(ProxySetter); ok {
+				if err := ps.SetProxy(regResp.Proxy); err != nil {
+					log.Printf("failed to set proxy from controller: %v", err)
+				} else {
+					log.Printf("registered with controller as %s (ip=%s, proxy=%s)", a.agentID, ip, regResp.Proxy.URL)
+					return
+				}
+			}
+		}
 		log.Printf("registered with controller as %s (ip=%s)", a.agentID, ip)
 		return
 	}
