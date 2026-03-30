@@ -2,3 +2,4 @@ bin/
 /agent
 /controller
 shoal-pool.json
+clients/python/__pycache__/
