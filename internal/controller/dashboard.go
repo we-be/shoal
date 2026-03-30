@@ -38,8 +38,8 @@ const dashboardHTML = `<!DOCTYPE html>
   .tag-available { background: #3fb95022; color: #3fb950; }
   .tag-leased { background: #d2992222; color: #d29922; }
   .tag-cf { background: #58a6ff22; color: #58a6ff; }
-  .domain-list { font-size: 12px; color: #8b949e; }
-  .domain-list span { margin-right: 8px; }
+  .domain-list { font-size: 12px; color: #8b949e; max-height: 60px; overflow-y: auto; white-space: normal; }
+  .domain-list span { margin-right: 6px; display: inline-block; margin-bottom: 2px; }
   .bar-container { height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; margin-top: 4px; }
   .bar { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
   .bar-green { background: #3fb950; }
@@ -144,9 +144,10 @@ function renderStats(pool, agents) {
 }
 
 function renderAgents(agents, pool) {
-  // Build a state map from pool status (agents endpoint doesn't have state)
+  // Sort by ID for stable ordering
+  const sorted = [...agents].sort((a, b) => a.id.localeCompare(b.id));
   const tbody = document.getElementById('agents');
-  tbody.innerHTML = agents.map(a => {
+  tbody.innerHTML = sorted.map(a => {
     const domains = a.domains || {};
     const domainParts = Object.entries(domains).map(([d, s]) => {
       let info = s.visit_count + 'v';
