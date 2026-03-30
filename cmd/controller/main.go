@@ -15,13 +15,14 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":8180", "address to listen on")
-	storePath := flag.String("store", "shoal-pool.json", "path to pool state snapshot file")
-	healthInterval := flag.Duration("health-interval", 15*time.Second, "health check interval")
-	leaseTTL := flag.Duration("lease-ttl", 5*time.Minute, "max lease duration before auto-expire")
-	maxMissed := flag.Int("max-missed-checks", 3, "remove agent after N consecutive failed health checks")
-	proxyFile := flag.String("proxy-file", "", "JSON file with proxy list [{url, username, password}, ...]")
-	proxyAPI := flag.String("proxy-api", "", "HTTP endpoint returning proxy list JSON")
+	// Flags with env var fallbacks for container deployments
+	addr := flag.String("addr", api.EnvOr("SHOAL_ADDR", ":8180"), "address to listen on (SHOAL_ADDR)")
+	storePath := flag.String("store", api.EnvOr("SHOAL_STORE", "shoal-pool.json"), "pool state snapshot path (SHOAL_STORE)")
+	healthInterval := flag.Duration("health-interval", api.EnvDuration("SHOAL_HEALTH_INTERVAL", 15*time.Second), "health check interval (SHOAL_HEALTH_INTERVAL)")
+	leaseTTL := flag.Duration("lease-ttl", api.EnvDuration("SHOAL_LEASE_TTL", 5*time.Minute), "max lease idle duration (SHOAL_LEASE_TTL)")
+	maxMissed := flag.Int("max-missed-checks", api.EnvInt("SHOAL_MAX_MISSED_CHECKS", 3), "failed checks before removal (SHOAL_MAX_MISSED_CHECKS)")
+	proxyFile := flag.String("proxy-file", api.EnvOr("SHOAL_PROXY_FILE", ""), "proxy list JSON file (SHOAL_PROXY_FILE)")
+	proxyAPI := flag.String("proxy-api", api.EnvOr("SHOAL_PROXY_API", ""), "proxy list HTTP endpoint (SHOAL_PROXY_API)")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -36,7 +37,6 @@ func main() {
 
 	srv := controller.NewServerWithConfig(config, *storePath, *addr)
 
-	// Set up proxy provider if configured
 	if *proxyFile != "" {
 		proxies, err := controller.LoadProxiesFromFile(*proxyFile)
 		if err != nil {
@@ -53,15 +53,12 @@ func main() {
 
 	httpServer := &http.Server{Addr: *addr, Handler: srv}
 
-	// Graceful shutdown — save pool state on SIGINT/SIGTERM
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		sig := <-sigCh
 		log.Printf("received %s, shutting down...", sig)
-
 		srv.Shutdown()
-
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		httpServer.Shutdown(ctx)
