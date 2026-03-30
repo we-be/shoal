@@ -195,11 +195,13 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 	// Collect results after navigation + actions
 	var html string
 	var currentURL string
+	var pageTitle string
 	var cookies []*network.Cookie
 
 	if err := chromedp.Run(navCtx,
 		chromedp.OuterHTML("html", &html, chromedp.ByQuery),
 		chromedp.Location(&currentURL),
+		chromedp.Title(&pageTitle),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			cookies, err = network.GetCookies().Do(ctx)
@@ -235,6 +237,9 @@ func (b *CDPBackend) Navigate(ctx context.Context, req api.NavigateRequest) (*ap
 		URL:          currentURL,
 		Status:       200,
 		HTML:         html,
+		ContentSize:  len(html),
+		Title:        pageTitle,
+		Redirected:   req.URL != "" && currentURL != req.URL,
 		Cookies:      apiCookies,
 		XHRResponses: xhrResponses,
 	}, nil

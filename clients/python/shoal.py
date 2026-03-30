@@ -39,6 +39,9 @@ class ShoalResponse:
     url: str = ""
     status: int = 0
     html: str = ""
+    content_size: int = 0
+    title: str = ""
+    redirected: bool = False
     cookies: list[dict] = field(default_factory=list)
     headers: dict[str, str] = field(default_factory=dict)
     user_agent: str = ""
@@ -50,6 +53,9 @@ class ShoalResponse:
             url=d.get("url", ""),
             status=d.get("status", 0),
             html=d.get("html", ""),
+            content_size=d.get("content_size", 0),
+            title=d.get("title", ""),
+            redirected=d.get("redirected", False),
             cookies=d.get("cookies", []),
             headers=d.get("headers", {}),
             user_agent=d.get("user_agent", ""),

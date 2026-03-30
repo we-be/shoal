@@ -134,12 +134,26 @@ func (t *TLSClientBackend) Navigate(ctx context.Context, req api.NavigateRequest
 		}
 	}
 
+	finalURL := resp.Request.URL.String()
+	htmlStr := string(body)
+
+	// Extract title from HTML
+	title := ""
+	if start := strings.Index(htmlStr, "<title>"); start != -1 {
+		if end := strings.Index(htmlStr[start:], "</title>"); end != -1 {
+			title = htmlStr[start+7 : start+end]
+		}
+	}
+
 	return &api.NavigateResponse{
-		URL:       resp.Request.URL.String(),
-		Status:    resp.StatusCode,
-		HTML:      string(body),
-		Cookies:   apiCookies,
-		UserAgent: t.userAgent,
+		URL:         finalURL,
+		Status:      resp.StatusCode,
+		HTML:        htmlStr,
+		ContentSize: len(body),
+		Title:       title,
+		Redirected:  req.URL != "" && finalURL != req.URL,
+		Cookies:     apiCookies,
+		UserAgent:   t.userAgent,
 	}, nil
 }
 

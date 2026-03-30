@@ -69,6 +69,9 @@ type NavigateResponse struct {
 	URL          string            `json:"url"`
 	Status       int               `json:"status"`
 	HTML         string            `json:"html"`
+	ContentSize  int               `json:"content_size"`              // bytes of HTML
+	Title        string            `json:"title,omitempty"`           // page <title>
+	Redirected   bool              `json:"redirected,omitempty"`      // URL changed from request
 	Cookies      []Cookie          `json:"cookies,omitempty"`
 	Headers      map[string]string `json:"headers,omitempty"`
 	UserAgent    string            `json:"user_agent,omitempty"`
