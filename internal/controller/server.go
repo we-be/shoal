@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/we-be/shoal/internal/api"
 	"github.com/we-be/shoal/internal/remora"
+	"github.com/we-be/shoal/internal/tides"
 )
 
 // Server is the controller's HTTP server — the tide that directs the shoal.
@@ -24,6 +25,7 @@ type Server struct {
 	store    *Store
 	renewer  *CFRenewer
 	proxies  ProxyProvider
+	tides    *tides.Cadence
 	mux      *http.ServeMux
 	client   *http.Client
 	started  time.Time
@@ -62,6 +64,8 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 	s.renewer = NewCFRenewer(pool, events, DefaultRenewalConfig(), selfURL)
 	s.renewer.Start()
 
+	s.tides = tides.New(tides.DefaultConfig())
+
 	s.mux = http.NewServeMux()
 
 	// Agent registration
@@ -80,6 +84,9 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 	s.mux.HandleFunc("GET /pool/status", s.handlePoolStatus)
 	s.mux.HandleFunc("GET /pool/agents", s.handlePoolAgents)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+
+	// Tides
+	s.mux.HandleFunc("GET /tides/status", s.handleTidesStatus)
 
 	// Dashboard & metrics
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
@@ -428,6 +435,10 @@ func (s *Server) forwardToAgent(ctx context.Context, agent *ManagedAgent, req ap
 	}
 
 	return &navResp, nil
+}
+
+func (s *Server) handleTidesStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.tides.Status())
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
