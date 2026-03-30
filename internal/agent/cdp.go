@@ -293,9 +293,17 @@ func executeActionWithRetry(ctx context.Context, action api.Action, maxAttempts 
 func executeAction(ctx context.Context, action api.Action) error {
 	switch action.Type {
 	case "fill":
-		js := fmt.Sprintf(
-			`document.querySelector(%q).value = %q`,
-			action.Selector, action.Value,
+		// Set value AND dispatch input/change events so framework-bound
+		// forms (Angular, React, PingFederate SSO) detect the change.
+		js := fmt.Sprintf(`(() => {
+			const el = document.querySelector(%q);
+			if (!el) throw new Error('selector not found: ' + %q);
+			el.focus();
+			el.value = '';
+			el.value = %q;
+			el.dispatchEvent(new Event('input', { bubbles: true }));
+			el.dispatchEvent(new Event('change', { bubbles: true }));
+		})()`, action.Selector, action.Selector, action.Value,
 		)
 		return chromedp.Run(ctx, chromedp.Evaluate(js, nil))
 
