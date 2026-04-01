@@ -44,6 +44,8 @@ class ShoalResponse:
     redirected: bool = False
     quality: str = ""           # "good", "partial", "blocked", "empty"
     quality_hints: list = field(default_factory=list)
+    block_system: str = ""     # "cloudflare", "akamai", "datadome", etc.
+    block_suggest: str = ""    # "retry_heavy", "retry_proxy", "wait", "skip"
     cookies: list[dict] = field(default_factory=list)
     headers: dict[str, str] = field(default_factory=dict)
     user_agent: str = ""
@@ -60,6 +62,8 @@ class ShoalResponse:
             redirected=d.get("redirected", False),
             quality=d.get("quality", ""),
             quality_hints=d.get("quality_hints", []),
+            block_system=d.get("block_system", ""),
+            block_suggest=d.get("block_suggest", ""),
             cookies=d.get("cookies", []),
             headers=d.get("headers", {}),
             user_agent=d.get("user_agent", ""),

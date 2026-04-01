@@ -75,6 +75,8 @@ type NavigateResponse struct {
 	Redirected   bool              `json:"redirected,omitempty"`      // URL changed from request
 	Quality      string            `json:"quality"`                   // "good", "partial", "blocked", "empty"
 	QualityHints []string          `json:"quality_hints,omitempty"`   // why quality is degraded
+	BlockSystem  string            `json:"block_system,omitempty"`    // "cloudflare", "akamai", etc.
+	BlockSuggest string            `json:"block_suggest,omitempty"`   // "retry_heavy", "retry_proxy", "wait", "skip"
 	Cookies      []Cookie          `json:"cookies,omitempty"`
 	Headers      map[string]string `json:"headers,omitempty"`
 	UserAgent    string            `json:"user_agent,omitempty"`
