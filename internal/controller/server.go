@@ -481,7 +481,19 @@ func getCounterValue(cv *prometheus.CounterVec, label string) float64 {
 }
 
 func (s *Server) handleTidesStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.tides.Status())
+	status := s.tides.Status()
+
+	// Update Prometheus gauges
+	tidesInterval.Set(status.Interval.Seconds())
+	for _, p := range []string{"high", "rising", "falling", "low"} {
+		if p == status.Phase {
+			tidesPhase.WithLabelValues(p).Set(1)
+		} else {
+			tidesPhase.WithLabelValues(p).Set(0)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleTidesBoost(w http.ResponseWriter, r *http.Request) {

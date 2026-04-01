@@ -135,6 +135,21 @@ var (
 		Help:      "Total agent reconnections (same address, identity preserved).",
 	})
 
+	// Tides
+	tidesInterval = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "shoal",
+		Subsystem: "tides",
+		Name:      "interval_seconds",
+		Help:      "Current scraping interval in seconds.",
+	})
+
+	tidesPhase = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "shoal",
+		Subsystem: "tides",
+		Name:      "phase",
+		Help:      "Current tide phase (1=active, 0=inactive).",
+	}, []string{"phase"})
+
 	// Queue
 	leaseQueued = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "shoal",
