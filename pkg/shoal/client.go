@@ -158,6 +158,17 @@ func (c *Client) SetTidesBoost(ctx context.Context, name string, factor float64)
 	return c.post(ctx, "/tides/boost", req, &resp)
 }
 
+// --- Remora ---
+
+// RemoraStats returns block detection quality breakdown.
+func (c *Client) RemoraStats(ctx context.Context) (map[string]any, error) {
+	var resp map[string]any
+	if err := c.get(ctx, "/remora/stats", &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 // --- Availability ---
 
 // IsAvailable checks if the controller is reachable.

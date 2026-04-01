@@ -226,6 +226,10 @@ class Shoal:
         """Force CF clearance renewal for a domain."""
         self._post("/renew", {"domain": domain})
 
+    def remora_stats(self) -> dict:
+        """Get remora block detection stats: quality breakdown."""
+        return self._get("/remora/stats")
+
     # --- Internal ---
 
     def _request(
