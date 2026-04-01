@@ -3,3 +3,4 @@ bin/
 /controller
 shoal-pool.json
 clients/python/__pycache__/
+.zig-cache/
