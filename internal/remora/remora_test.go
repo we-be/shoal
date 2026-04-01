@@ -125,6 +125,83 @@ func TestScanShape(t *testing.T) {
 	}
 }
 
+func TestScanAkamai(t *testing.T) {
+	d := Scan(&api.NavigateResponse{
+		HTML:        "<html><body><script>var _abck='abc'; var ak_bmsc='xyz';</script>Akamai Bot Manager</body></html>",
+		ContentSize: 5000,
+		Title:       "Site",
+	})
+	if !d.Blocked || d.System != "akamai" {
+		t.Fatalf("expected akamai block, got blocked=%v system=%s", d.Blocked, d.System)
+	}
+}
+
+func TestScanPerimeterX(t *testing.T) {
+	d := Scan(&api.NavigateResponse{
+		HTML:        "<html><body><div id='px-captcha'>PerimeterX challenge</div></body></html>",
+		ContentSize: 5000,
+		Title:       "Site",
+	})
+	if !d.Blocked || d.System != "perimeterx" {
+		t.Fatalf("expected perimeterx block, got blocked=%v system=%s", d.Blocked, d.System)
+	}
+}
+
+func TestScanKasada(t *testing.T) {
+	d := Scan(&api.NavigateResponse{
+		HTML:        "<html><body><script src='/_sec/cp_challenge/ak-challenge'></script></body></html>",
+		ContentSize: 5000,
+		Title:       "Site",
+	})
+	if !d.Blocked || d.System != "kasada" {
+		t.Fatalf("expected kasada block, got blocked=%v system=%s", d.Blocked, d.System)
+	}
+}
+
+func TestScanGenericBot(t *testing.T) {
+	d := Scan(&api.NavigateResponse{
+		HTML:        "<html><body><h1>Access Denied</h1><p>Please verify you are a human</p></body></html>",
+		ContentSize: 5000,
+		Title:       "Blocked",
+	})
+	if d.Quality != "blocked" {
+		t.Fatalf("expected blocked, got %s", d.Quality)
+	}
+}
+
+func TestScanJSShell(t *testing.T) {
+	// Build a large page with many scripts but little text
+	scripts := ""
+	for i := 0; i < 15; i++ {
+		scripts += "<script src='bundle" + string(rune('a'+i)) + ".js'></script>"
+	}
+	html := "<html><head>" + scripts + "</head><body><div id='root'></div></body></html>"
+	// Pad to 60KB
+	for len(html) < 60000 {
+		html += "<!-- padding -->"
+	}
+
+	d := Scan(&api.NavigateResponse{
+		HTML:        html,
+		ContentSize: len(html),
+		Title:       "App",
+	})
+	if d.Quality != "partial" || d.Type != "js_shell" {
+		t.Fatalf("expected partial/js_shell, got %s/%s", d.Quality, d.Type)
+	}
+}
+
+func TestScanAppError(t *testing.T) {
+	d := Scan(&api.NavigateResponse{
+		HTML:        "<html><head><title>Application error: a client-side exception has occurred</title></head><body></body></html>",
+		ContentSize: 5000,
+		Title:       "Application error: a client-side exception has occurred",
+	})
+	if d.Quality != "partial" || d.Type != "app_error" {
+		t.Fatalf("expected partial/app_error, got %s/%s", d.Quality, d.Type)
+	}
+}
+
 func TestScanGeoBlock(t *testing.T) {
 	d := Scan(&api.NavigateResponse{
 		HTML:        "<html><body>This content is not available in your region</body></html>",
