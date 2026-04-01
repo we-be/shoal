@@ -17,6 +17,7 @@
 package tides
 
 import (
+	"log"
 	"math"
 	"sync"
 	"time"
@@ -53,9 +54,10 @@ func DefaultConfig() Config {
 
 // Cadence manages the tidal scraping rhythm.
 type Cadence struct {
-	config Config
-	mu     sync.RWMutex
-	boosts map[string]float64 // named boost factors (0.0 = no boost, 1.0 = double speed)
+	config    Config
+	mu        sync.RWMutex
+	boosts    map[string]float64 // named boost factors (0.0 = no boost, 1.0 = double speed)
+	lastPhase string             // track phase transitions
 }
 
 // New creates a cadence from the given config.
@@ -141,12 +143,11 @@ type Status struct {
 func (c *Cadence) Status() Status {
 	interval := c.Interval()
 
-	c.mu.RLock()
+	c.mu.Lock()
 	boosts := make(map[string]float64, len(c.boosts))
 	for k, v := range c.boosts {
 		boosts[k] = v
 	}
-	c.mu.RUnlock()
 
 	// Determine phase
 	maxInterval := c.config.Baseline + c.config.Amplitude
@@ -159,6 +160,13 @@ func (c *Cadence) Status() Status {
 	} else if ratio > 0.25 {
 		phase = "rising"
 	}
+
+	// Track phase transitions
+	if c.lastPhase != "" && c.lastPhase != phase {
+		log.Printf("tide shift: %s → %s (interval %s)", c.lastPhase, phase, interval.Round(time.Second))
+	}
+	c.lastPhase = phase
+	c.mu.Unlock()
 
 	return Status{
 		Interval: interval,
