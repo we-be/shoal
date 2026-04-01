@@ -90,6 +90,9 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 	s.mux.HandleFunc("GET /tides/status", s.handleTidesStatus)
 	s.mux.HandleFunc("POST /tides/boost", s.handleTidesBoost)
 
+	// Info
+	s.mux.HandleFunc("GET /version", s.handleVersion)
+
 	// Remora
 	s.mux.HandleFunc("GET /remora/stats", s.handleRemoraStats)
 
@@ -444,6 +447,14 @@ func (s *Server) forwardToAgent(ctx context.Context, agent *ManagedAgent, req ap
 	}
 
 	return &navResp, nil
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"version":    api.Version,
+		"controller": api.ControllerCodename,
+		"agent":      api.AgentCodename,
+	})
 }
 
 func (s *Server) handleRemoraStats(w http.ResponseWriter, r *http.Request) {
