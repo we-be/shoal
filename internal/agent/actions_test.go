@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"testing"
 
 	"github.com/we-be/shoal/internal/api"
@@ -9,7 +10,7 @@ import (
 func TestExecuteActionUnknownType(t *testing.T) {
 	// Unknown action type should return a clean error, not panic
 	// (context.Background() is safe — chromedp returns error, doesn't crash)
-	err := executeAction(nil, api.Action{Type: "nonexistent"})
+	err := executeAction(context.TODO(), api.Action{Type: "nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for unknown action type")
 	}
