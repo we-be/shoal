@@ -12,6 +12,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/we-be/shoal/internal/api"
 	"github.com/we-be/shoal/internal/remora"
 	"github.com/we-be/shoal/internal/tides"
@@ -88,6 +89,9 @@ func NewServerWithConfig(healthCfg HealthConfig, storePath string, listenAddr st
 	// Tides
 	s.mux.HandleFunc("GET /tides/status", s.handleTidesStatus)
 	s.mux.HandleFunc("POST /tides/boost", s.handleTidesBoost)
+
+	// Remora
+	s.mux.HandleFunc("GET /remora/stats", s.handleRemoraStats)
 
 	// Dashboard & metrics
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
@@ -440,6 +444,29 @@ func (s *Server) forwardToAgent(ctx context.Context, agent *ManagedAgent, req ap
 	}
 
 	return &navResp, nil
+}
+
+func (s *Server) handleRemoraStats(w http.ResponseWriter, r *http.Request) {
+	// Collect from prometheus counters — simpler than maintaining a separate store
+	stats := map[string]any{
+		"quality": map[string]float64{
+			"good":    getCounterValue(remoraQualityTotal, "good"),
+			"partial": getCounterValue(remoraQualityTotal, "partial"),
+			"blocked": getCounterValue(remoraQualityTotal, "blocked"),
+			"empty":   getCounterValue(remoraQualityTotal, "empty"),
+		},
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
+func getCounterValue(cv *prometheus.CounterVec, label string) float64 {
+	m := &dto.Metric{}
+	c, err := cv.GetMetricWithLabelValues(label)
+	if err != nil {
+		return 0
+	}
+	c.(prometheus.Metric).Write(m)
+	return m.GetCounter().GetValue()
 }
 
 func (s *Server) handleTidesStatus(w http.ResponseWriter, r *http.Request) {
