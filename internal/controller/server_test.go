@@ -217,3 +217,82 @@ func TestServerBadRequests(t *testing.T) {
 		t.Fatalf("expected 404 for fake lease, got %d", w.Code)
 	}
 }
+
+func TestTidesStatus(t *testing.T) {
+	srv := newTestServer()
+
+	w := getJSON(srv, "/tides/status")
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var status map[string]any
+	json.NewDecoder(w.Body).Decode(&status)
+
+	if _, ok := status["interval"]; !ok {
+		t.Fatal("expected interval in tides status")
+	}
+	if _, ok := status["phase"]; !ok {
+		t.Fatal("expected phase in tides status")
+	}
+}
+
+func TestTidesBoost(t *testing.T) {
+	srv := newTestServer()
+
+	// Set boost
+	w := postJSON(srv, "/tides/boost", map[string]any{"name": "volatility", "factor": 1.5})
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var status map[string]any
+	json.NewDecoder(w.Body).Decode(&status)
+	boosts, ok := status["boosts"].(map[string]any)
+	if !ok {
+		t.Fatal("expected boosts map in response")
+	}
+	if boosts["volatility"] != 1.5 {
+		t.Fatalf("expected volatility=1.5, got %v", boosts["volatility"])
+	}
+
+	// Clear boost
+	w = postJSON(srv, "/tides/boost", map[string]any{"name": "volatility", "factor": 0})
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestTidesBoostBadRequest(t *testing.T) {
+	srv := newTestServer()
+
+	w := postJSON(srv, "/tides/boost", map[string]any{"factor": 1.0})
+	if w.Code != 400 {
+		t.Fatalf("expected 400 for missing name, got %d", w.Code)
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	srv := newTestServer()
+
+	w := getJSON(srv, "/metrics")
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if len(body) < 100 {
+		t.Fatal("expected prometheus metrics output")
+	}
+}
+
+func TestDashboardEndpoint(t *testing.T) {
+	srv := newTestServer()
+
+	w := getJSON(srv, "/dashboard")
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Type") != "text/html" {
+		t.Fatalf("expected text/html, got %s", w.Header().Get("Content-Type"))
+	}
+}
