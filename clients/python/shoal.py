@@ -164,21 +164,16 @@ class Shoal:
         data = self._post("/fetch", payload)
         resp = ShoalResponse.from_dict(data)
 
-        # Auto-retry with heavier agent if blocked by bot detection.
-        # Don't escalate for "empty" (could be rate limit) or "partial" (paywall).
-        # Only escalate when remora detected an actual bot management system.
-        if auto_retry and resp.quality == "blocked":
-            hints = resp.quality_hints or []
-            # Only escalate if the block suggests a heavier browser would help
-            escalate_hints = {"retry_heavy", "cloudflare", "akamai", "datadome",
-                             "perimeterx", "imperva", "shape", "bot_detect",
-                             "javascript required", "browser not supported"}
-            if any(h in " ".join(hints).lower() for h in escalate_hints):
+        # Auto-retry based on remora's block_suggest
+        if auto_retry and resp.quality == "blocked" and resp.block_suggest:
+            if resp.block_suggest == "retry_heavy":
                 upgrade = _next_class(agent_class or "light")
                 if upgrade:
                     payload["class"] = upgrade
                     data = self._post("/fetch", payload)
                     resp = ShoalResponse.from_dict(data)
+            # "retry_proxy" and "wait" can't be handled client-side —
+            # need different proxy or backoff, which the controller manages
 
         return resp
 
