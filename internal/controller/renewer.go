@@ -163,7 +163,10 @@ func (r *CFRenewer) renewDomain(domain, url string) error {
 		Domain:   domain,
 		Class:    api.ClassHeavy,
 	}
-	body, _ := json.Marshal(leaseReq)
+	body, err := json.Marshal(leaseReq)
+	if err != nil {
+		return fmt.Errorf("marshalling lease request: %w", err)
+	}
 
 	resp, err := r.client.Post(controllerURL+"/lease", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -176,7 +179,19 @@ func (r *CFRenewer) renewDomain(domain, url string) error {
 	}
 
 	var leaseResp api.LeaseResponse
-	json.NewDecoder(resp.Body).Decode(&leaseResp)
+	if err := json.NewDecoder(resp.Body).Decode(&leaseResp); err != nil {
+		return fmt.Errorf("decoding lease response: %w", err)
+	}
+
+	// release is a best-effort helper — log but don't block on errors
+	release := func() {
+		rb, err := json.Marshal(api.ReleaseRequest{LeaseID: leaseResp.LeaseID})
+		if err != nil {
+			log.Printf("cf renewer: failed to marshal release for %s: %v", domain, err)
+			return
+		}
+		r.client.Post(controllerURL+"/release", "application/json", bytes.NewReader(rb))
+	}
 
 	// Navigate to the domain — triggers CF solve + cookie handoff
 	navReq := api.RequestPayload{
@@ -184,19 +199,21 @@ func (r *CFRenewer) renewDomain(domain, url string) error {
 		URL:        url,
 		MaxTimeout: int(r.config.RequestTimeout / time.Millisecond),
 	}
-	navBody, _ := json.Marshal(navReq)
+	navBody, err := json.Marshal(navReq)
+	if err != nil {
+		release()
+		return fmt.Errorf("marshalling nav request: %w", err)
+	}
 
 	navResp, err := r.client.Post(controllerURL+"/request", "application/json", bytes.NewReader(navBody))
 	if err != nil {
-		releaseBody, _ := json.Marshal(api.ReleaseRequest{LeaseID: leaseResp.LeaseID})
-		r.client.Post(controllerURL+"/release", "application/json", bytes.NewReader(releaseBody))
+		release()
 		return fmt.Errorf("navigation failed: %w", err)
 	}
 	navResp.Body.Close()
 
 	// Release the grouper
-	releaseBody, _ := json.Marshal(api.ReleaseRequest{LeaseID: leaseResp.LeaseID})
-	r.client.Post(controllerURL+"/release", "application/json", bytes.NewReader(releaseBody))
+	release()
 
 	cfRenewalsTotal.Inc()
 	return nil

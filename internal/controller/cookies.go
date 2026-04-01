@@ -87,7 +87,11 @@ func (s *Server) ensureMinnowCookies(agent *ManagedAgent, domain string) {
 		URL:     sourceURL,
 		Cookies: sourceCookies,
 	}
-	body, _ := json.Marshal(setCookiesReq)
+	body, err := json.Marshal(setCookiesReq)
+	if err != nil {
+		log.Printf("lazy cookie push marshal failed: %v", err)
+		return
+	}
 	url := fmt.Sprintf("http://%s/cookies/set", agent.Address)
 	resp, err := s.client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -101,7 +105,7 @@ func (s *Server) ensureMinnowCookies(agent *ManagedAgent, domain string) {
 // hasCFClearance checks if a cookie set contains cf_clearance.
 func hasCFClearance(cookies []api.Cookie) bool {
 	for _, c := range cookies {
-		if c.Name == "cf_clearance" {
+		if c.Name == api.CookieCFClearance {
 			return true
 		}
 	}

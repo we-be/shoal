@@ -22,7 +22,7 @@ func TestStoreRoundTrip(t *testing.T) {
 	lease, _ := pool1.Acquire(api.LeaseRequest{Consumer: "test", Domain: "example.com"})
 	pool1.RecordNavigation(lease.ID, "https://example.com/", []api.Cookie{
 		{Name: "session", Value: "abc", Domain: "example.com"},
-		{Name: "cf_clearance", Value: "xyz", Domain: "example.com", Expires: float64(time.Now().Add(time.Hour).Unix())},
+		{Name: api.CookieCFClearance, Value: "xyz", Domain: "example.com", Expires: float64(time.Now().Add(time.Hour).Unix())},
 	})
 	pool1.Release(lease.ID)
 

@@ -67,7 +67,7 @@ func TestUpdateIdentity(t *testing.T) {
 
 	// Second visit with CF clearance
 	updateIdentity(identity, "https://example.com/page2", []api.Cookie{
-		{Name: "cf_clearance", Value: "xyz", Domain: "example.com", Expires: float64(time.Now().Add(time.Hour).Unix())},
+		{Name: api.CookieCFClearance, Value: "xyz", Domain: "example.com", Expires: float64(time.Now().Add(time.Hour).Unix())},
 	})
 
 	if state.VisitCount != 2 {
@@ -152,7 +152,7 @@ func TestDomainWarmth(t *testing.T) {
 
 	// CF clearance (warmth 3)
 	updateIdentity(identity, "https://cf.com/", []api.Cookie{
-		{Name: "cf_clearance", Value: "x", Domain: "cf.com", Expires: float64(time.Now().Add(time.Hour).Unix())},
+		{Name: api.CookieCFClearance, Value: "x", Domain: "cf.com", Expires: float64(time.Now().Add(time.Hour).Unix())},
 	})
 	if w := domainWarmth(identity, "cf.com"); w != 3 {
 		t.Fatalf("expected warmth 3 (cf clearance), got %d", w)

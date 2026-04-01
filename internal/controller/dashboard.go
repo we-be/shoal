@@ -402,9 +402,10 @@ func (s *Server) handleDashboardAgents(w http.ResponseWriter, r *http.Request) {
 	out := make([]agentView, 0, len(s.pool.agents))
 	for _, a := range s.pool.agents {
 		// Marshal/unmarshal domains to get a clean interface{}
-		domainsRaw, _ := json.Marshal(a.Identity.Domains)
 		var domains map[string]interface{}
-		json.Unmarshal(domainsRaw, &domains)
+		if domainsRaw, err := json.Marshal(a.Identity.Domains); err == nil {
+			json.Unmarshal(domainsRaw, &domains)
+		}
 
 		out = append(out, agentView{
 			ID:       a.Identity.ID,

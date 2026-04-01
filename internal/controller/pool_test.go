@@ -187,7 +187,7 @@ func TestCFWarmthScoring(t *testing.T) {
 	}
 	agentForCF := lease.AgentID
 	pool.RecordNavigation(lease.ID, "https://cf.com/", []api.Cookie{
-		{Name: "cf_clearance", Value: "xyz", Domain: "cf.com", Expires: 9999999999},
+		{Name: api.CookieCFClearance, Value: "xyz", Domain: "cf.com", Expires: 9999999999},
 	})
 	pool.Release(lease.ID)
 

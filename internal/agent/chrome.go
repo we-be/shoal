@@ -95,7 +95,7 @@ func NewChromeBackend(chromeBin string, cdpPort int, proxy *api.ProxyConfig) (*C
 		log.Printf("chrome proxy: %s", proxy.URL)
 	}
 
-	args = append(args, "about:blank")
+	args = append(args, api.AboutBlank)
 
 	var cmd *exec.Cmd
 	if strings.HasPrefix(chromeBin, "flatpak::") {
@@ -146,7 +146,7 @@ func NewChromeBackend(chromeBin string, cdpPort int, proxy *api.ProxyConfig) (*C
 		log.Printf("chrome CDP proxy auth enabled for %s", proxy.URL)
 	}
 
-	initActions = append(initActions, chromedp.Navigate("about:blank"))
+	initActions = append(initActions, chromedp.Navigate(api.AboutBlank))
 
 	if err := chromedp.Run(tabCtx, initActions); err != nil {
 		tabCancel()

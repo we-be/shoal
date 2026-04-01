@@ -83,7 +83,7 @@ func updateIdentity(identity *api.BrowserIdentity, navURL string, cookies []api.
 	state.HasCFClearance = false
 	state.CFExpiry = nil
 	for _, c := range state.Cookies {
-		if c.Name == "cf_clearance" {
+		if c.Name == api.CookieCFClearance {
 			state.HasCFClearance = true
 			state.CFURL = navURL // remember which URL earned it
 			if c.Expires > 0 {

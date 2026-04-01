@@ -114,7 +114,7 @@ func initCDPBackend(allocCtx context.Context, allocCancel context.CancelFunc, cm
 	// Try creating a new tab. If that fails (e.g. Flatpak Chrome),
 	// attach to an existing one instead.
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-	if err := chromedp.Run(tabCtx, chromedp.Navigate("about:blank")); err != nil {
+	if err := chromedp.Run(tabCtx, chromedp.Navigate(api.AboutBlank)); err != nil {
 		tabCancel()
 		log.Printf("%s: new tab failed (%v), looking for existing target...", name, err)
 
@@ -145,7 +145,7 @@ func initCDPBackend(allocCtx context.Context, allocCancel context.CancelFunc, cm
 		}
 
 		tabCtx, tabCancel = chromedp.NewContext(allocCtx, chromedp.WithTargetID(targetID))
-		if err := chromedp.Run(tabCtx, chromedp.Navigate("about:blank")); err != nil {
+		if err := chromedp.Run(tabCtx, chromedp.Navigate(api.AboutBlank)); err != nil {
 			tabCancel()
 			allocCancel()
 			if cmd != nil {

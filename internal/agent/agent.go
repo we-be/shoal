@@ -54,7 +54,10 @@ func (a *Agent) registerLoop() {
 		IP:      ip,
 	}
 
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	if err != nil {
+		log.Fatalf("marshalling registration request: %v", err)
+	}
 
 	for {
 		resp, err := http.Post(

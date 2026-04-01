@@ -31,6 +31,12 @@ const (
 	HealthNoAgents  = "no_agents"
 )
 
+// Well-known values.
+const (
+	CookieCFClearance = "cf_clearance"
+	AboutBlank        = "about:blank"
+)
+
 // Error codes.
 const (
 	ErrPoolExhausted = "pool_exhausted"
