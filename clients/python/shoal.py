@@ -254,15 +254,38 @@ class Shoal:
         return ShoalResponse.from_dict(data)
 
     def _post(self, path: str, payload: dict) -> dict:
-        resp = self.http.post(f"{self.base_url}{path}", json=payload)
-        data = resp.json()
+        try:
+            resp = self.http.post(f"{self.base_url}{path}", json=payload)
+        except requests.ConnectionError:
+            raise ShoalError("connection_refused", f"cannot reach Shoal at {self.base_url}")
+        except requests.Timeout:
+            raise ShoalError("timeout", f"request to {self.base_url}{path} timed out")
+        try:
+            data = resp.json()
+        except ValueError:
+            raise ShoalError("invalid_response", f"non-JSON response from {path} (status {resp.status_code})")
         if resp.status_code >= 400:
             raise ShoalError(data.get("error", "unknown"), data.get("detail", ""))
         return data
 
     def _get(self, path: str) -> Any:
-        resp = self.http.get(f"{self.base_url}{path}")
-        return resp.json()
+        try:
+            resp = self.http.get(f"{self.base_url}{path}")
+            return resp.json()
+        except requests.ConnectionError:
+            raise ShoalError("connection_refused", f"cannot reach Shoal at {self.base_url}")
+        except requests.Timeout:
+            raise ShoalError("timeout", f"request to {self.base_url}{path} timed out")
+        except ValueError:
+            raise ShoalError("invalid_response", f"non-JSON response from {path}")
+
+    def is_available(self) -> bool:
+        """Check if the Shoal controller is reachable."""
+        try:
+            self.health()
+            return True
+        except ShoalError:
+            return False
 
 
 def _next_class(current: str) -> str | None:
