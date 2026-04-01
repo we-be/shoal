@@ -1,3 +1,26 @@
+## v0.7.0 — Dock Lights (2026-03-31)
+
+Reliability hardening. Tests, error handling, and actionable responses.
+
+### Testing
+- **Remora 93% coverage** — all 8 detection systems tested (17 tests)
+- **Agent 19.4% coverage** — tls-client navigate, redirect, 404, proxy, cookie injection tests
+- **Controller** — tides status/boost, metrics, dashboard, remora integration tests
+- **83 total tests** across 5 packages, all with race detection
+
+### Improvements
+- **`block_system` + `block_suggest` in response** — callers see exactly which bot management system blocked them and what to do about it
+- **Smart auto-retry** — Python client uses `block_suggest` instead of hint-matching heuristic
+- **Python client error handling** — `ConnectionError`, `Timeout`, non-JSON all raise clean `ShoalError` with descriptive messages
+- **`is_available()` / `IsAvailable()` / `WaitAvailable()`** — controller reachability check in both clients
+- **Remora stats on dashboard** — Activity card shows good/blocked/queued counts
+- **Redfish on Fleet card** — dashboard shows all three agent tiers
+
+### Refactoring
+- Extracted `cookies.go` from `server.go`
+
+---
+
 ## v0.6.0 — Shrimp Run (2026-03-30)
 
 New modules, new rhythms. The shoal moves with the tides.
