@@ -194,14 +194,18 @@ function renderMetrics(text) {
 
   const actEl = document.getElementById('activity-stats');
   if (actEl) {
+    const blocked = get('remora_blocked_total');
+    const goodQ = (grouped['remora_quality_total'] || []).find(i => i.labels.includes('good'));
+    const goodCount = goodQ ? goodQ.val : 0;
     actEl.innerHTML =
       '<div class="stat-row">' +
         miniStat(get('request_total'), 'requests', '') +
         miniStat(get('cf_solves_total'), 'cf solves', 'cyan') +
       '</div>' +
       '<div class="stat-row">' +
-        miniStat(get('cf_handoffs_total'), 'handoffs', 'purple') +
-        miniStat(get('lease_denied_total'), 'denied', 'red') +
+        miniStat(Math.round(goodCount), 'good', 'green') +
+        miniStat(Math.round(blocked), 'blocked', 'red') +
+        miniStat(get('lease_queued_total'), 'queued', 'yellow') +
       '</div>';
   }
 
