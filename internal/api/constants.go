@@ -3,7 +3,7 @@ package api
 // Agent classes — groupers vs minnows.
 const (
 	ClassHeavy  = "heavy"  // full browser with display: Chrome, Camoufox, FlareSolverr
-	ClassMedium = "medium" // headless browser, no display: Lightpanda
+	ClassMedium = "medium" // headless browser, no display: Lightpanda, StealthPanda
 	ClassLight  = "light"  // HTTP client: tls-client, curl-impersonate
 )
 
@@ -15,11 +15,12 @@ const (
 
 // Backend types.
 const (
-	BackendStub       = "stub"
-	BackendCDP        = "cdp"
-	BackendLightpanda = "lightpanda"
-	BackendChrome     = "chrome"
-	BackendTLSClient  = "tls-client"
+	BackendStub          = "stub"
+	BackendCDP           = "cdp"
+	BackendLightpanda    = "lightpanda"
+	BackendStealthPanda  = "stealthpanda"
+	BackendChrome        = "chrome"
+	BackendTLSClient     = "tls-client"
 )
 
 // Health statuses.

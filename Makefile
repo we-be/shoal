@@ -1,7 +1,8 @@
-.PHONY: build stop clean school school-lp school-cf school-minnow
+.PHONY: build stop clean school school-lp school-sp school-cf school-minnow
 
 CONTROLLER_PORT := 8180
 LP_BIN := $(shell which lightpanda)
+SP_BIN := $(shell which stealthpanda 2>/dev/null || echo stealthpanda)
 TESTSITE_PORT := 9090
 COUNT := 5
 VERSION := $(shell head -1 CHANGELOG.md | grep -oP 'v\d+\.\d+\.\d+' || echo "dev")
@@ -51,6 +52,26 @@ school-lp: build stop
 			-lightpanda-port $$lp_port \
 			> /dev/null 2>&1 & \
 		echo "  redfish :$$agent_port -> lightpanda :$$lp_port"; \
+	done
+	@sleep 2
+	@curl -s localhost:$(CONTROLLER_PORT)/pool/status | python3 -m json.tool
+
+# School of stealthpandas — stealth headless browser. For JS + anti-bot sites.
+school-sp: build stop
+	@rm -f shoal-pool.json
+	@echo "formation: school of stealthpandas ($(COUNT) stealthpanda)"
+	@bin/controller -addr :$(CONTROLLER_PORT) > /dev/null 2>&1 & echo "  controller on :$(CONTROLLER_PORT)"
+	@sleep 0.3
+	@for i in $$(seq 0 $$(($(COUNT) - 1))); do \
+		agent_port=$$((8181 + $$i)); \
+		sp_port=$$((9222 + $$i)); \
+		bin/agent -addr :$$agent_port \
+			-controller http://localhost:$(CONTROLLER_PORT) \
+			-backend stealthpanda \
+			-stealthpanda-bin $(SP_BIN) \
+			-lightpanda-port $$sp_port \
+			> /dev/null 2>&1 & \
+		echo "  stealthpanda :$$agent_port -> cdp :$$sp_port"; \
 	done
 	@sleep 2
 	@curl -s localhost:$(CONTROLLER_PORT)/pool/status | python3 -m json.tool

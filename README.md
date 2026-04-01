@@ -133,6 +133,7 @@ curl -X POST localhost:8180/renew -d '{"domain": "example.com"}'
 | Backend | Class | Flag |
 |---------|-------|------|
 | Chrome | heavy | `-backend chrome` |
+| [StealthPanda](https://github.com/we-be/stealthpanda) | medium | `-backend stealthpanda` |
 | [Lightpanda](https://github.com/lightpanda-io/browser) | medium | `-backend lightpanda` |
 | CDP (any) | medium | `-backend cdp -cdp-url ws://...` |
 | tls-client | light | `-backend tls-client` |

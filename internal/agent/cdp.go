@@ -76,6 +76,39 @@ func NewLightpandaBackend(binPath string, cdpPort int) (*CDPBackend, error) {
 	return initCDPBackend(allocCtx, allocCancel, cmd, api.BackendLightpanda)
 }
 
+// NewStealthPandaBackend launches a StealthPanda process and connects via CDP.
+// StealthPanda is a stealth fork of Lightpanda with Chrome-matching fingerprints.
+func NewStealthPandaBackend(binPath string, cdpPort int, screenWidth, screenHeight int) (*CDPBackend, error) {
+	portStr := strconv.Itoa(cdpPort)
+
+	args := []string{"serve", "--host", "127.0.0.1", "--port", portStr,
+		"--insecure-disable-tls-host-verification",
+		"--timeout", "86400",
+		"--screen-width", strconv.Itoa(screenWidth),
+		"--screen-height", strconv.Itoa(screenHeight),
+	}
+
+	cmd := exec.Command(binPath, args...)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("starting stealthpanda: %w", err)
+	}
+
+	log.Printf("stealthpanda started (pid=%d, port=%d, screen=%dx%d)", cmd.Process.Pid, cdpPort, screenWidth, screenHeight)
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", cdpPort)
+	wsURL, err := waitForCDP(baseURL, 10*time.Second)
+	if err != nil {
+		cmd.Process.Kill()
+		return nil, fmt.Errorf("stealthpanda didn't come up: %w", err)
+	}
+
+	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
+	return initCDPBackend(allocCtx, allocCancel, cmd, api.BackendStealthPanda)
+}
+
 // initCDPBackend creates a persistent browser tab that lives for the agent's lifetime.
 func initCDPBackend(allocCtx context.Context, allocCancel context.CancelFunc, cmd *exec.Cmd, name string) (*CDPBackend, error) {
 	// Try creating a new tab. If that fails (e.g. Flatpak Chrome),
