@@ -158,6 +158,28 @@ func (c *Client) SetTidesBoost(ctx context.Context, name string, factor float64)
 	return c.post(ctx, "/tides/boost", req, &resp)
 }
 
+// --- Availability ---
+
+// IsAvailable checks if the controller is reachable.
+func (c *Client) IsAvailable(ctx context.Context) bool {
+	_, err := c.Health(ctx)
+	return err == nil
+}
+
+// WaitAvailable blocks until the controller is reachable or ctx is cancelled.
+func (c *Client) WaitAvailable(ctx context.Context) error {
+	for {
+		if c.IsAvailable(ctx) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+}
+
 // --- Status ---
 
 // Status returns pool counts.
